@@ -1,6 +1,8 @@
 
 util = require 'util'
 
+Assembler = require('./assembler').Assembler
+
 class ParseException
   constructor: (@message) ->
   toString: -> @message
@@ -29,7 +31,7 @@ class Expression
     e = new Expression(loc)
     e.label = x
     e.evaluate = (symtab) ->
-      if Parser::Specials[@label]
+      if Assembler::Specials[@label]
         throw new ParseException("You can't use " + @label.toUpperCase() + " in expressions.")
       if not symtab[@label]
         throw new UnresolvableException("Can't resolve reference to " + @label)
@@ -75,7 +77,7 @@ class Expression
   toString: ->
     return @literal.toString() if @literal
     return @label if @label
-    return Parser::RegisterNames[@register] if @register
+    return Assembler::RegisterNames[@register] if @register
     return "(" + @unary + @right.toString() + ")" if @unary
     return "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")" if @binary
     "ERROR"
@@ -111,17 +113,6 @@ class Parser
   BinaryRegex: /^0b[01]+$/
   LabelRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*$/
 
-  Registers: { "a": 0, "b": 1, "c": 2, "x": 3, "y": 4, "z": 5, "i": 6, "j": 7 }
-  RegisterNames: "ABCXYZIJ"
-
-  Specials:
-    "push": 0x18
-    "pop":  0x18
-    "peek": 0x19
-    "pick": 0x1a
-    "sp":   0x1b
-    "pc":   0x1c
-    "ex":   0x1d
 
   # logger will be used to report errors: logger(pos, message, fatal?)
   # if not fatal, it's just a warning.
@@ -195,7 +186,7 @@ class Parser
     else if @text[@pos] == "%"
       # allow unix-style %A for register names
       @pos++
-      register = Parser::Registers[@text[@pos].toLowerCase()]
+      register = Assembler::Registers[@text[@pos].toLowerCase()]
       if not register?
         throw new ParseException("Expected register name")
       @pos++
@@ -213,8 +204,8 @@ class Parser
         Expression::Literal(loc, parseInt(operand, 16))
       else if Parser::BinaryRegex.exec(operand)?
         Expression::Literal(loc, parseInt(operand.slice(2), 2))
-      else if Parser::Registers[operand]?
-        Expression::Register(loc, Parser::Registers[operand])
+      else if Assembler::Registers[operand]?
+        Expression::Register(loc, Assembler::Registers[operand])
       else if Parser::LabelRegex.exec(operand)?
         Expression::Label(loc, operand)
 
