@@ -5,6 +5,48 @@ class ParseException
   constructor: (@message) ->
   toString: -> @message
 
+# an expression tree.
+class Expression
+  Register: (loc, r) ->
+    e = new Expression(loc)
+    e.register = r
+    e
+
+  Literal: (loc, n) ->
+    e = new Expression(loc)
+    e.literal = n
+    e
+
+  Label: (loc, x) ->
+    e = new Expression(loc)
+    e.label = x
+    e
+
+  Unary: (loc, op, r) ->
+    e = new Expression(loc)
+    e.unary = op
+    e.right = r
+    e
+
+  Binary: (loc, op, l, r) ->
+    e = new Expression(loc)
+    e.binary = op
+    e.left = l
+    e.right = r
+    e
+
+  constructor: (@loc) ->
+
+  # for debugging.
+  toString: ->
+    return @literal.toString() if @literal
+    return @label if @label
+    return Parser::RegisterNames[@register] if @register
+    return "(" + @unary + @right.toString() + ")" if @unary
+    return "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")" if @binary
+    "ERROR"
+
+# parse bits of a line of assembly.
 class Parser
   # precedence of supported binary operators in expressions
   Binary:
@@ -23,10 +65,10 @@ class Parser
   @NumberRegex = /^[0-9]+$/
   @HexRegex = /^0x[0-9a-fA-F]+$/
   BinaryRegex: /^0b[01]+$/
-  @LabelRegex = /^[a-zA-Z_.][a-zA-Z_.0-9]*$/
+  LabelRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*$/
 
-  @Registers = { "a": 0, "b": 1, "c": 2, "x": 3, "y": 4, "z": 5, "i": 6, "j": 7 }
-  @RegisterNames = "ABCXYZIJ"
+  Registers: { "a": 0, "b": 1, "c": 2, "x": 3, "y": 4, "z": 5, "i": 6, "j": 7 }
+  RegisterNames: "ABCXYZIJ"
 
   # logger will be used to report errors: logger(pos, message, fatal?)
   # if not fatal, it's just a warning.
@@ -43,6 +85,14 @@ class Parser
     @text = text
     @pos = 0
     @end = text.length
+
+  troubleSpot: (pos = @pos) ->
+    spacer = if pos == 0 then "" else (" " for i in [1..pos]).join("")
+    [ @text, spacer + "^" ]
+
+  logTroubleSpot: (pos = @pos) ->
+    console.log("")
+    console.log(x) for x in @troubleSpot()
 
   skipWhitespace: ->
     c = @text[@pos]
@@ -67,7 +117,7 @@ class Parser
       text[pos]
     [ rv, pos + 1 ]
 
-  # parse a single atom and return one of: literal, register, label, ...
+  # parse a single atom and return an expression.
   parseAtom: ->
     @skipWhitespace()
     throw new ParseException("Value expected (operand or expression)") if @pos == @end
@@ -80,21 +130,25 @@ class Parser
       if @pos == @end or @text[@pos] != ")"
         throw new ParseException("Missing ) on expression")
       @pos++
+      atom
     else if @text[@pos] == "'"
       # literal char
-      [ ch, @pos ] = @unquoteChar(@text, @pos, @end)
+      [ ch, @pos ] = @unquoteChar(@text, @pos + 1, @end)
       if @pos == @end or @text[@pos] != "'"
+        @logTroubleSpot()
         throw new ParseException("Expected ' to close literal char")
       @pos++
-      { literal: @text[@pos + 1], loc: loc }
+      Expression::Literal(loc, ch.charCodeAt(0))
     else if @text[@pos] == "%"
       # allow unix-style %A for register names
       @pos++
-      register = Parser.Registers[@text[@pos].toLowerCase()]
+      register = Parser::Registers[@text[@pos].toLowerCase()]
       if not register?
         throw new ParseException("Expected register name")
       @pos++
-      { register: register, loc: loc }
+      x = Expression::Register(loc, register)
+      console.log("x = " + util.inspect(x))
+      x
     else
       operand = Parser.OperandRegex.exec(@text.slice(@pos, @end))
       if not operand?
@@ -103,22 +157,22 @@ class Parser
       @pos += operand.length
       operand = @vars[operand].toLowerCase() if @vars[operand]?
       if Parser.NumberRegex.exec(operand)?
-        { literal: parseInt(operand, 10), loc: loc }
+        Expression::Literal(loc, parseInt(operand, 10))
       else if Parser.HexRegex.exec(operand)?
-        { literal: parseInt(operand, 16), loc: loc }
+        Expression::Literal(loc, parseInt(operand, 16))
       else if Parser::BinaryRegex.exec(operand)?
-        { literal: parseInt(operand.slice(2), 2), loc: loc }
-      else if Parser.Registers[operand]?
-        { register: Parser.Registers[operand], loc: loc }
-      else if Parser.LabelRegex.exec(operand)?
-        { label: operand, loc: loc }
+        Expression::Literal(loc, parseInt(operand.slice(2), 2))
+      else if Parser::Registers[operand]?
+        Expression::Register(loc, Parser::Registers[operand])
+      else if Parser::LabelRegex.exec(operand)?
+        Expression::Label(loc, operand)
 
   parseUnary: ->
     if @pos < @end and (@text[@pos] == "-" or @text[@pos] == "+")
       loc = @pos
       op = @text[@pos++]
       expr = @parseAtom()
-      { unary: op, right: expr, loc: loc }
+      Expression::Unary(loc, op, expr)
     else
       @parseAtom()
 
@@ -138,19 +192,8 @@ class Parser
       loc = @pos
       @pos += op.length
       right = @parseExpression(newPrecedence)
-      left = { binary: op, left: left, right: right, loc: loc }
+      left = Expression::Binary(loc, op, left, right)
 
-  # turn an expression struct into a string, for debugging.
-  expressionToString: (expr) ->
-    return expr.literal.toString() if expr.literal?
-    return expr.label if expr.label?
-    return Parser.RegisterNames[expr.register] if expr.register?
-    return "(" + expr.unary + @expressionToString(expr.right) + ")" if expr.unary?
-    if expr.binary?
-      "(" + @expressionToString(expr.left) + " " + expr.binary + " " +
-        @expressionToString(expr.right) + ")"
-    else
-      "ERROR"
 
 exports.Parser = Parser
 exports.ParseException = ParseException

@@ -14,17 +14,28 @@ describe "Parser", ->
     p = new parser.Parser(logger)
     p.setText " 2 + 5 * x + smile"
     e = p.parseExpression(0)
-    p.expressionToString(e).should.equal("((2 + (5 * X)) + smile)")
+    e.toString().should.equal("((2 + (5 * X)) + smile)")
 
   it "parses hex and binary constants", ->
     p = new parser.Parser(logger)
     p.setText "0x100 * -0b0010"
     e = p.parseExpression(0)
-    p.expressionToString(e).should.equal("(256 * (-2))")
+    e.toString().should.equal("(256 * (-2))")
 
   it "understands shifting and precedence", ->
     p = new parser.Parser(logger)
     p.setText "8 + 9 << 3 + 4"
     e = p.parseExpression(0)
-    p.expressionToString(e).should.equal("((8 + 9) << (3 + 4))")
+    e.toString().should.equal("((8 + 9) << (3 + 4))")
 
+  it "parses character literals", ->
+    p = new parser.Parser(logger)
+    p.setText "'p' - '\x40'"
+    e = p.parseExpression(0)
+    e.toString().should.equal("(112 - 64)")
+
+  it "parses unix-style registers", ->
+    p = new parser.Parser(logger)
+    p.setText "(0x2300 + %j)"
+    e = p.parseExpression(0)
+    e.toString().should.equal("(8960 + J)")
