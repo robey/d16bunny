@@ -1,0 +1,24 @@
+{
+  "name": "d16bunny",
+  "version": "1.0.0",
+  "description": "a small assembler for the DCPU",
+  "keywords": [ "dcpu", "coffee-script" ],
+  "author": "Robey Pointer <robeypointer@gmail.com>",
+  "scripts": {
+    "test": "make test"
+  },
+  "dependencies": {
+    "coffee-script": "*",
+    "optparse": "*"
+  },
+  "devDependencies": {
+    "mocha": "*",
+    "should": "*",
+    "glob": "*"
+  },
+  "directories": {
+    "lib": "./lib/d16bunny"
+  },
+  "main": "./lib/d16bunny"
+}
+
