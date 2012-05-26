@@ -5,27 +5,46 @@ class ParseException
   constructor: (@message) ->
   toString: -> @message
 
+# thrown when evaluating an expression that refers to a symbol that hasn't been defined (yet?)
+class UnresolvableException
+  constructor: (@message) ->
+  toString: -> @message
+
 # an expression tree.
 class Expression
   Register: (loc, r) ->
     e = new Expression(loc)
     e.register = r
+    e.evaluate = (symtab) ->
+      throw new ParseException("Constant expressions may not contain register references")
     e
 
   Literal: (loc, n) ->
     e = new Expression(loc)
     e.literal = n
+    e.evaluate = (symtab) -> @literal
     e
 
   Label: (loc, x) ->
     e = new Expression(loc)
     e.label = x
+    e.evaluate = (symtab) ->
+      if Parser::Specials[@label]
+        throw new ParseException("You can't use " + @label.toUpperCase() + " in expressions.")
+      if not symtab[@label]
+        throw new UnresolvableException("Can't resolve reference to " + @label)
+      symtab[@label]
     e
 
   Unary: (loc, op, r) ->
     e = new Expression(loc)
     e.unary = op
     e.right = r
+    e.evaluate = (symtab) ->
+      r = @right.evaluate(symtab)
+      switch @unary
+        when '-' then -r
+        else r
     e
 
   Binary: (loc, op, l, r) ->
@@ -33,6 +52,21 @@ class Expression
     e.binary = op
     e.left = l
     e.right = r
+    e.evaluate = (symtab) ->
+      l = @left.evaluate(symtab)
+      r = @right.evaluate(symtab)
+      switch @binary
+        when '+' then l + r
+        when '-' then l - r
+        when '*' then l * r
+        when '/' then l / r
+        when '%' then l % r
+        when '<<' then l << r
+        when '>>' then l >> r
+        when '&' then l & r
+        when '^' then l ^ r
+        when '|' then l | r
+        else throw "Internal error (undefined binary operator)"
     e
 
   constructor: (@loc) ->
@@ -45,6 +79,16 @@ class Expression
     return "(" + @unary + @right.toString() + ")" if @unary
     return "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")" if @binary
     "ERROR"
+
+  # Given a symbol table of names and values, resolve this expression tree
+  # into a single number. Any register reference, or reference to a symbol
+  # that isn't defined in 'symtab' will be an error.
+  evaluate: (symtab) ->
+    throw "must be implemented in objects"
+
+#    if (value < 0 || value > 0xffff) {
+#      logger(pos, "(Warning) Literal value " + value.toString(16) + " will be truncated to " + (value & 0xffff).toString(16));
+#     value = value & 0xffff;
 
 # parse bits of a line of assembly.
 class Parser
@@ -61,14 +105,23 @@ class Parser
     '^' : 6
     '|' : 5
 
-  @OperandRegex = /^[A-Za-z_.0-9]+/
-  @NumberRegex = /^[0-9]+$/
-  @HexRegex = /^0x[0-9a-fA-F]+$/
+  OperandRegex: /^[A-Za-z_.0-9]+/
+  NumberRegex: /^[0-9]+$/
+  HexRegex: /^0x[0-9a-fA-F]+$/
   BinaryRegex: /^0b[01]+$/
   LabelRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*$/
 
   Registers: { "a": 0, "b": 1, "c": 2, "x": 3, "y": 4, "z": 5, "i": 6, "j": 7 }
   RegisterNames: "ABCXYZIJ"
+
+  Specials:
+    "push": 0x18
+    "pop":  0x18
+    "peek": 0x19
+    "pick": 0x1a
+    "sp":   0x1b
+    "pc":   0x1c
+    "ex":   0x1d
 
   # logger will be used to report errors: logger(pos, message, fatal?)
   # if not fatal, it's just a warning.
@@ -146,19 +199,17 @@ class Parser
       if not register?
         throw new ParseException("Expected register name")
       @pos++
-      x = Expression::Register(loc, register)
-      console.log("x = " + util.inspect(x))
-      x
+      Expression::Register(loc, register)
     else
-      operand = Parser.OperandRegex.exec(@text.slice(@pos, @end))
+      operand = Parser::OperandRegex.exec(@text.slice(@pos, @end))
       if not operand?
         throw new ParseException("Expected operand value")
       operand = operand[0].toLowerCase()
       @pos += operand.length
       operand = @vars[operand].toLowerCase() if @vars[operand]?
-      if Parser.NumberRegex.exec(operand)?
+      if Parser::NumberRegex.exec(operand)?
         Expression::Literal(loc, parseInt(operand, 10))
-      else if Parser.HexRegex.exec(operand)?
+      else if Parser::HexRegex.exec(operand)?
         Expression::Literal(loc, parseInt(operand, 16))
       else if Parser::BinaryRegex.exec(operand)?
         Expression::Literal(loc, parseInt(operand.slice(2), 2))

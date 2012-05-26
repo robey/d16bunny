@@ -39,3 +39,27 @@ describe "Parser", ->
     p.setText "(0x2300 + %j)"
     e = p.parseExpression(0)
     e.toString().should.equal("(8960 + J)")
+
+  it "evaluates simple expressions", ->
+    p = new parser.Parser(logger)
+    p.setText "9"
+    e = p.parseExpression(0)
+    e.evaluate().should.equal(9)
+
+  it "evaluates labels", ->
+    p = new parser.Parser(logger)
+    p.setText "2 + hello * 3"
+    e = p.parseExpression(0)
+    e.evaluate(hello: 10).should.equal(32)
+
+  it "evaluates complex expressions", ->
+    p = new parser.Parser(logger)
+    p.setText "((offset & 0b1111) << 4) * -ghost"
+    e = p.parseExpression(0)
+    e.evaluate(ghost: 2, offset: 255).should.equal(-480)
+
+  it "throws an exception for unknown labels", ->
+    p = new parser.Parser(logger)
+    p.setText "cats + dogs"
+    e = p.parseExpression(0)
+    (-> e.evaluate(cats: 5)).should.throw(/resolve/)
