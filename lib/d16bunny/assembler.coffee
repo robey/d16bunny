@@ -4,45 +4,45 @@ util = require 'util'
 Dcpu = require('./dcpu').Dcpu
 
 class ParseException
-  constructor: (@message) ->
-  toString: -> @message
-
-# thrown when evaluating an expression that refers to a symbol that hasn't been defined (yet?)
-class UnresolvableException
-  constructor: (@message) ->
-  toString: -> @message
+  constructor: (@text, @pos, @message) ->
+  toString: -> 
+    spacer = if @pos == 0 then "" else (" " for i in [1 .. @pos]).join("")
+    "\n" + @text + "\n" + spacer + "^\n" + @message + "\n"
 
 # an expression tree.
 class Expression
-  Register: (loc, r) ->
-    e = new Expression(loc)
+  Register: (text, pos, r) ->
+    e = new Expression(text, pos)
     e.register = r
     e.evaluate = (symtab) ->
-      throw new ParseException("Constant expressions may not contain register references")
+      throw new ParseException(@text, @pos, "Constant expressions may not contain register references")
     e.toString = -> Dcpu.RegisterNames[@register] if @register
+    e.resolvable = (symtab) -> true
     e
 
-  Literal: (loc, n) ->
-    e = new Expression(loc)
+  Literal: (text, pos, n) ->
+    e = new Expression(text, pos)
     e.literal = n
     e.evaluate = (symtab) -> @literal
     e.toString = -> @literal.toString()
+    e.resolvable = (symtab) -> true
     e
 
-  Label: (loc, x) ->
-    e = new Expression(loc)
+  Label: (text, pos, x) ->
+    e = new Expression(text, pos)
     e.label = x
     e.evaluate = (symtab) ->
       if Dcpu.Reserved[@label]
-        throw new ParseException("You can't use " + @label.toUpperCase() + " in expressions.")
+        throw new ParseException(@text, @pos, "You can't use " + @label.toUpperCase() + " in expressions.")
       if not symtab[@label]
-        throw new UnresolvableException("Can't resolve reference to " + @label)
+        throw new ParseException(@text, @pos, "Can't resolve reference to " + @label)
       symtab[@label]
     e.toString = -> @label
+    e.resolvable = (symtab) -> symtab[@label]?
     e
 
-  Unary: (loc, op, r) ->
-    e = new Expression(loc)
+  Unary: (text, pos, op, r) ->
+    e = new Expression(text, pos)
     e.unary = op
     e.right = r
     e.evaluate = (symtab) ->
@@ -51,10 +51,11 @@ class Expression
         when '-' then -r
         else r
     e.toString = -> "(" + @unary + @right.toString() + ")"
+    e.resolvable = (symtab) -> @right.resolvable(symtab)
     e
 
-  Binary: (loc, op, l, r) ->
-    e = new Expression(loc)
+  Binary: (text, pos, op, l, r) ->
+    e = new Expression(text, pos)
     e.binary = op
     e.left = l
     e.right = r
@@ -72,33 +73,9 @@ class Expression
         when '&' then l & r
         when '^' then l ^ r
         when '|' then l | r
-        else throw "Internal error (undefined binary operator)"
+        else throw new ParseException(@text, @pos, "Internal error (undefined binary operator)")
     e.toString = -> "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")"
-    e
-
-  # things that can only be at the top of an operand:
-  Pointer: (loc, x) ->
-    e = new Expression(loc)
-    e.pointer = x
-    e.toString = -> "[" + @pointer.toString() + "]"
-    e
-
-  Pick: (loc, x) ->
-    e = new Expression(loc)
-    e.pick = x
-    e.toString = -> "PICK " + @pick.toString()
-    e
-
-  String: (loc, x) ->
-    e = new Expression(loc)
-    e.string = x
-    e.toString = -> util.inspect(@string)
-    e
-
-  PackedString: (loc, x) ->
-    e = new Expression(loc)
-    e.packedString = x
-    e.toString = -> "p" + util.inspect(@packedString)
+    e.resolvable = (symtab) -> @left.resolvable(symtab) and @right.resolvable(symtab)
     e
 
   constructor: (@loc) ->
@@ -110,6 +87,9 @@ class Expression
   # into a single number. Any register reference, or reference to a symbol
   # that isn't defined in 'symtab' will be an error.
   evaluate: (symtab) -> throw "must be implemented in objects"
+
+  # can this expression's references be resolved by the symtab (yet)?
+  resolvable: (symtab) -> throw "must be implemented in objects"
 
 # FIXME : 
 #    if (value < 0 || value > 0xffff) {
@@ -159,14 +139,8 @@ class Assembler
     @pos = 0
     @end = text.length
 
-  troubleSpot: (pos = @pos) ->
-    spacer = if pos == 0 then "" else (" " for i in [1..pos]).join("")
-    [ @text, spacer + "^" ]
-
-  logTroubleSpot: (e, pos = @pos) ->
-    console.log("")
-    console.log(e.toString())
-    console.log(x) for x in @troubleSpot()
+  fail: (loc, message) ->
+    throw new ParseException(@text, loc, message)
 
   skipWhitespace: ->
     c = @text[@pos]
@@ -177,13 +151,13 @@ class Assembler
       @end = @pos
 
   parseWord: (name) ->
+    loc = @pos
     m = Assembler::SymbolRegex.exec(@text.slice(@pos))
-    if not m?
-      throw new ParseException(name + " must contain only letters, digits, _ or .")
+    if not m? then @fail loc, name + " must contain only letters, digits, _ or ."
     word = m[0].toLowerCase()
     @pos += word.length
     if Dcpu.Reserved[word] or Dcpu.ReservedOp[word]
-      throw new ParseException("Reserved keyword: " + word)
+      @fail loc, "Reserved keyword: " + word
     word
 
   unquoteChar: (text, pos, end) ->
@@ -207,62 +181,59 @@ class Assembler
   # parse a single atom and return an expression.
   parseAtom: ->
     @skipWhitespace()
-    throw new ParseException("Value expected (operand or expression)") if @pos == @end
+    if @pos == @end then @fail @pos, "Value expected (operand or expression)"
 
     loc = @pos
     if @text[@pos] == "("
       @pos++
       atom = @parseExpression(0)
       @skipWhitespace()
-      if @pos == @end or @text[@pos] != ")"
-        throw new ParseException("Missing ) on expression")
+      if @pos == @end or @text[@pos] != ")" then @fail @pos, "Missing ) on expression"
       @pos++
       atom
     else if @text[@pos] == "'"
       # literal char
       [ ch, @pos ] = @unquoteChar(@text, @pos + 1, @end)
       if @pos == @end or @text[@pos] != "'"
-        throw new ParseException("Expected ' to close literal char")
+        @fail @pos, "Expected ' to close literal char"
       @pos++
-      Expression::Literal(loc, ch.charCodeAt(0))
+      Expression::Literal(@text, loc, ch.charCodeAt(0))
     else if @text[@pos] == "%"
       # allow unix-style %A for register names
       @pos++
       register = Dcpu.Registers[@text[@pos].toLowerCase()]
-      if not register?
-        throw new ParseException("Expected register name")
+      if not register? then @fail @pos, "Expected register name"
       @pos++
-      Expression::Register(loc, register)
+      Expression::Register(@text, loc, register)
     else
       operand = Assembler::OperandRegex.exec(@text.slice(@pos, @end))
-      if not operand?
-        throw new ParseException("Expected operand value")
+      if not operand? then @fail @pos, "Expected operand value"
       operand = operand[0].toLowerCase()
       @pos += operand.length
       operand = @vars[operand].toLowerCase() if @vars[operand]?
       if Assembler::NumberRegex.exec(operand)?
-        Expression::Literal(loc, parseInt(operand, 10))
+        Expression::Literal(@text, loc, parseInt(operand, 10))
       else if Assembler::HexRegex.exec(operand)?
-        Expression::Literal(loc, parseInt(operand, 16))
+        Expression::Literal(@text, loc, parseInt(operand, 16))
       else if Assembler::BinaryRegex.exec(operand)?
-        Expression::Literal(loc, parseInt(operand.slice(2), 2))
+        Expression::Literal(@text, loc, parseInt(operand.slice(2), 2))
       else if Dcpu.Registers[operand]?
-        Expression::Register(loc, Dcpu.Registers[operand])
+        Expression::Register(@text, loc, Dcpu.Registers[operand])
       else if Assembler::LabelRegex.exec(operand)?
-        Expression::Label(loc, operand)
+        Expression::Label(@text, loc, operand)
 
   parseUnary: ->
     if @pos < @end and (@text[@pos] == "-" or @text[@pos] == "+")
       loc = @pos
       op = @text[@pos++]
       expr = @parseAtom()
-      Expression::Unary(loc, op, expr)
+      Expression::Unary(@text, loc, op, expr)
     else
       @parseAtom()
 
   parseExpression: (precedence) ->
     @skipWhitespace()
-    throw new ParseException("Expression expected") if @pos == @end
+    if @pos == @end then @fail @pos, "Expression expected"
     left = @parseUnary()
     loop
       @skipWhitespace()
@@ -271,48 +242,68 @@ class Assembler
       if not Assembler::Binary[op]
         op += @text[@pos + 1]
       if not (newPrecedence = Assembler::Binary[op])?
-        throw new ParseException("Unknown operator (try: + - * / % << >> & ^ |)")
+        @fail @pos, "Unknown operator (try: + - * / % << >> & ^ |)"
       return left if newPrecedence <= precedence
       loc = @pos
       @pos += op.length
       right = @parseExpression(newPrecedence)
-      left = Expression::Binary(loc, op, left, right)
+      left = Expression::Binary(@text, loc, op, left, right)
 
   parseString: ->
     rv = ""
+    @pos++
     while @pos < @end and @text[@pos] != '"'
       [ ch, @pos ] = @unquoteChar(@text, @pos, @end)
       rv += ch
-    if @pos == @end
-      throw new ParseException("Expected \" to close string")
+    if @pos == @end then @fail @pos, "Expected \" to close string"
     @pos++
     rv
 
-  # parse out an operand, which might be any expression, including strings.
-  parseOperand: ->
+  # parse an operand expression into:
+  #   - loc: where we found it
+  #   - code: 5-bit value for the operand in an opcode
+  #   - expr: (optional) an expression to be evaluated for the immediate
+  # if 'destination' is set, then the operand is in the destination slot (which determines whether
+  #   it uses "push" or "pop").
+  parseOperand: (destination) ->
     loc = @pos
+    inPointer = false
+    inPick = false
+
     if @text[@pos] == '['
       @pos++
-      expr = @parseExpression(0)
-      if @pos == @end or @text[@pos] != ']'
-        throw new ParseException("Expected ]")
-      @pos++
-      return Expression::Pointer(loc, expr)
-    if @pos + 4 < @end and @text.substr(@pos, 4).toLowerCase() == "pick"
+      inPointer = true
+    else if @pos + 4 < @end and @text.substr(@pos, 4).toLowerCase() == "pick"
       @pos += 4
-      return Expression::Pick(loc, @parseExpression(0))
-    if @pos + 1 < @end and @text[@pos] == 'p' and @text[@pos + 1] == '"'
-      @pos += 2
-      return Expression::PackedString(loc, @parseString())
-    if @text[@pos] == '"'
+      inPick = true
+
+    expr = @parseExpression(0)
+    if inPointer
+      if @pos == @end or @text[@pos] != ']' then @fail loc, "Expected ]"
       @pos++
-      return Expression::String(loc, @parseString())
-    @parseExpression(0)
+    if inPick
+      return { loc: loc, code: 0x1a, expr: expr }
+    if expr.register?
+      return { loc: loc, code: (if inPointer then 0x08 else 0x00) + expr.register }
+    if expr.label? and Dcpu.Specials[expr.label]
+      if inPointer then @fail loc, "You can't use a pointer to " + expr.label.toUpperCase()
+      if (destination and expr.label == "pop") or ((not destination) and expr.label == "push")
+        @fail loc, "You can't use " + expr.label.toUpperCase() + " in this position"
+      return { loc: loc, code: Dcpu.Specials[expr.label] }
+
+    # special case: [literal + register]
+    if inPointer and expr.binary? and (expr.left.register? or expr.right.register?)
+      if expr.binary != '+' then @fail loc, "Only a value + register is allowed"
+      register = if expr.left.register? then expr.left.register else expr.right.register
+      expr = if expr.left.register? then expr.right else expr.left
+      return { loc: loc, code: 0x10 + register, expr: expr }
+
+    { loc: loc, code: (if inPointer then 0x1e else 0x1f), expr: expr }
 
   parseMacroDirective: ->
+    loc = @pos
     name = @parseWord("Macro name")
     @skipWhitespace()
-
     argNames = []
     if @pos < @end and @text[@pos] == '('
       @pos++
@@ -324,14 +315,17 @@ class Assembler
         if @pos < @end and @text[@pos] == ','
           @pos++
           @skipWhitespace()
-      if @pos == @end
-        throw new ParseException("Expected )")
+      if @pos == @end then @fail @pos, "Expected )"
       @pos++
     @skipWhitespace()
     if @pos == @end or @text[@pos] != '{'
-      throw new ParseException("Expected { to start macro definition")
-    @inMacro = name + "(" + argNames.length + ")"
-    @macros[@inMacro] = { name: @inMacro, lines: [], params: argNames }
+      @fail @pos, "Expected { to start macro definition"
+    fullname = name + "(" + argNames.length + ")"
+    if @macros[fullname]? then @fail loc, "Duplicate definition of " + fullname
+    @macros[fullname] = { name: fullname, lines: [], params: argNames }
+    if not @macros[name]? then @macros[name] = []
+    @macros[name].push(argNames.length)
+    @inMacro = fullname
 
   parseDefineDirective: ->
     name = @parseWord("Definition name")
@@ -341,60 +335,111 @@ class Assembler
 
   # a directive starts with "#".
   parseDirective: ->
+    loc = @pos
     directive = @parseWord("Directive")
     @skipWhitespace()
     switch directive
       when "macro" then @parseMacroDirective()
       when "define" then @parseDefineDirective()
-      else throw new ParseException("Unknown directive: " + directive)
+      else @fail loc, "Unknown directive: " + directive
+
+  parseMacroArgs: ->
+    inString = false
+    inChar = false
+    args = []
+    argn = 0
+    while @pos < @end
+      break if (@text[@pos] == ';' or @text[@pos] == ')') and not inString and not inChar
+      if not args[argn]? then args.push("")
+      if @text[@pos] == '\\' and @pos + 1 < @end
+        args[argn] += @text[@pos++]
+        args[argn] += @text[@pos++]
+      else if @text[@pos] == ',' and not inString and not inChar
+        argn++
+        @pos++
+        @skipWhitespace()
+      else
+        args[argn] += @text[@pos]
+        if @text[@pos] == '"' then inString = not inString
+        if @text[@pos] == "\'" then inChar = not inChar
+        @pos++
+    if inString then @fail @pos, "Expected closing \""
+    if inChar then @fail @pos, "Expected closing \'"
+    args
+
+  parseMacroCall: (line) ->
+    if @pos < @end and @text[@pos] == '('
+      @pos++
+      @skipWhitespace()
+    args = @parseMacroArgs()
+    name = line.op
+    delete line.op
+    if @macros[name].indexOf(args.length) < 0
+      @fail 0, "Macro '" + name + "' requires " + @macros[name].join(" or ") + " arguments"
+    macro = @macros[name + "(" + args.length + ")"]
+
+    old_vars = @vars
+    @vars = {}
+    for k, v of old_vars
+      @vars[k] = v
+    for i in [0 .. args.length - 1]
+      @vars[macro.params[i]] = args[i]
+
+    line.expanded = []
+    for x in macro.lines
+      # @compileLine(...)
+      # line.size += newline.size
+      # line.expanded.push(newline)
+      x
+
+    @vars = old_vars
+    line
 
   # returns an object containing:
   #   - label (if any)
   #   - op (if any)
-  #   - args (array)
-  #   - argpos (array)
+  #   - args (array of expressions, if present)
+  #   - expanded (a sub-list of line objects, if a macro was expanded)
   parseLine: (text) ->
     @setText(text)
     @skipWhitespace()
-    rv = { args: [], argpos: [] }
-    if @pos == @end then return rv
+    line = {}
+    if @pos == @end then return line
 
     if @inMacro
       if @text[@pos] == '}'
         @inMacro = false
       else
         @macros[@inMacro].lines.push(text)
-      return rv
+      return line
     if @text[@pos] == '#'
       @pos++
       @parseDirective()
-      return rv
+      return line
     if @text[@pos] == ':'
       @pos++
-      rv.label = @parseWord("Label")
+      line.label = @parseWord("Label")
       @skipWhitespace()
-    return rv if @pos == @end
+    return line if @pos == @end
 
-    rv.op = @parseWord("Operation name")
-    if @vars[rv.op] then rv.op = @vars[rv.op]
+    line.op = @parseWord("Operation name")
+    if @vars[line.op] then line.op = @vars[line.op]
     @skipWhitespace()
 
     if @text[@pos] == '='
       # special case "name = value"
-      name = rv.op
-      delete rv['op']
+      name = line.op
+      delete line.op
       @pos++
       @skipWhitespace()
       value = @parseExpression(0).evaluate()
       @symtab[name] = value
-      return rv
+      return line
 
-    # if this is a a macro call, the parameters (if any) will be surrounded by parens.
-    if @macros[rv.op] and @pos < @end and @text[@pos] == '('
-      @pos++
-      @skipWhitespace()
-    return rv if @pos == @end
+    if @macros[line.op] then return @parseMacroCall(line)
 
+
+    rv = {}
     inString = false
     inChar = false
     argn = 0
@@ -417,15 +462,12 @@ class Assembler
         if @text[i] == '"' then inString = not inString
         if @text[i] == "\'" then inChar = not inChar
         i++
-    if inString
-      throw new ParseException("Expected closing \"")
-    if inChar
-      throw new ParseException("Expected closing \'")
-    rv
+    if inString then @fail @pos, "Expected closing \""
+    if inChar then @fail @pos, "Expected closing \'"
+    line
 
 
 
 
 exports.Assembler = Assembler
 exports.ParseException = ParseException
-exports.UnresolvableException = UnresolvableException

@@ -5,4 +5,3 @@ exports.Dcpu = dcpu.Dcpu
 
 exports.Assembler = assembler.Assembler
 exports.ParseException = assembler.ParseException
-exports.UnresolvableException = assembler.UnresolvableException

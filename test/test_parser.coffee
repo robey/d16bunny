@@ -67,21 +67,17 @@ describe "Parser", ->
 
   it "parses comment lines", ->
     x = new d16bunny.Assembler(logger).parseLine("; comment.")
-    x.label?.should.equal(false)
-    x.op?.should.equal(false)
-    x.args.length.should.equal(0)
+    x.should.eql({})
 
   it "parses a single op", ->
     x = new d16bunny.Assembler(logger).parseLine("  nop")
     x.label?.should.equal(false)
     x.op.should.equal("nop")
-    x.args.length.should.equal(0)
 
   it "parses a labeled line", ->
     x = new d16bunny.Assembler(logger).parseLine(":start")
     x.label.should.equal("start")
     x.op?.should.equal(false)
-    x.args.length.should.equal(0)
 
   it "parses a line with operands", ->
     x = new d16bunny.Assembler(logger).parseLine(":last set [a], ','")
@@ -126,22 +122,21 @@ describe "Parser", ->
   it "parses string literals", ->
     a = new d16bunny.Assembler(logger)
     a.setText("\"hello sailor\\x21\"")
-    x = a.parseOperand()
-    x.toString().should.equal("'hello sailor!'")
-    a.setText("p\"hello sailor\\x21\"")
-    x = a.parseOperand()
-    x.toString().should.equal("p'hello sailor!'")
+    x = a.parseString()
+    x.should.equal("hello sailor!")
 
-  it "parses pointers", ->
+  it "parses pointer operands", ->
     a = new d16bunny.Assembler(logger)
     a.setText("[0x20 + x]")
-    x = a.parseOperand()
-    x.toString().should.equal("[(32 + X)]")
+    info = a.parseOperand(destination = false)
+    info.code.should.equal(0x13)
+    info.expr.evaluate().should.equal(32)
 
-  it "parses pick expressions", ->
+  it "parses pick operands", ->
     a = new d16bunny.Assembler(logger)
     a.setText("pick leftover - 23")
-    x = a.parseOperand()
-    x.toString().should.equal("PICK (leftover - 23)")
+    info = a.parseOperand(destination = false)
+    info.code.should.equal(0x1a)
+    info.expr.evaluate(leftover: 25).should.equal(2)
 
 
