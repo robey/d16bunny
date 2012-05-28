@@ -31,7 +31,7 @@ class Expression
     e = new Expression(loc)
     e.label = x
     e.evaluate = (symtab) ->
-      if Assembler::Specials[@label]
+      if Assembler::Reserved[@label]
         throw new ParseException("You can't use " + @label.toUpperCase() + " in expressions.")
       if not symtab[@label]
         throw new UnresolvableException("Can't resolve reference to " + @label)
@@ -112,17 +112,20 @@ class Parser
   HexRegex: /^0x[0-9a-fA-F]+$/
   BinaryRegex: /^0b[01]+$/
   LabelRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*$/
-
+  SymbolRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*/
 
   # logger will be used to report errors: logger(pos, message, fatal?)
   # if not fatal, it's just a warning.
   constructor: (@logger) ->
     # some state is kept by the parser during parsing of each line:
-    @text = ""  # text currently being parsed
-    @pos = 0    # current index within text
-    @end = 0    # parsing should not continue past end
+    @text = ""         # text currently being parsed
+    @pos = 0           # current index within text
+    @end = 0           # parsing should not continue past end
+    @inMacro = false   # waiting for an "}"
     # when evaluating macros, this holds the current parameters:
     @vars = {}
+    # macros that have been defined:
+    @macros = {}
 
   # useful for unit tests
   setText: (text) ->
@@ -142,6 +145,9 @@ class Parser
     c = @text[@pos]
     while @pos < @end and (c == " " or c == "\t" or c == "\r" or c == "\n")
       c = @text[++@pos]
+    if c == ';'
+      # truncate line at comment
+      @end = @pos
 
   unquoteChar: (text, pos, end) ->
     rv = if text[pos] == '\\' and pos + 1 < end
@@ -235,6 +241,137 @@ class Parser
       @pos += op.length
       right = @parseExpression(newPrecedence)
       left = Expression::Binary(loc, op, left, right)
+
+  parseMacroDirective: ->
+    m = Parser::SymbolRegex.exec(@text.slice(@pos))
+    if not m?
+      throw new ParseException("Macro name must contain only letters, digits, _ or .")
+    name = m[0].toLowerCase()
+    @pos += name.length
+    @skipWhitespace()
+    if Assembler::Reserved[name] or Assembler::ReservedOp[name]
+      throw new ParseException("Invalid name for macro: " + name)
+
+    argNames = []
+    if @pos < @end and @text[pos] == '('
+      @pos++
+      @skipWhitespace()
+      while @pos < @end and @text[pos] != ')'
+        break if @text[pos] == ')'
+        m = Parser::SymbolRegex.exec(@text.slice(@pos))
+        if not m?
+          throw new ParseException("Expected macro parameter name")
+        argName = m[0].toLowerCase()
+        argNames.push(argName)
+        @pos += argName.length
+        @skipWhitespace()
+        if @text[pos] != ')' and @text[@pos] != ','
+          throw new ParseException("Expected , or )")
+      if @pos == @end
+        throw new ParseException("Expected )")
+      @pos++
+    @skipWhitespace()
+    if @pos < @end or @text[pos] != '{'
+      throw new ParseException("Expected { to start macro definition")
+    @inMacro = true
+
+  parseDefineDirective: ->
+
+  # a directive starts with "#".
+  parseDirective: ->
+    m = Parser::SymbolRegex.exec(@text.slice(@pos))
+    if not m?
+      throw new ParseException("Expected directive name after #")
+    directive = m[0].toLowerCase()
+    @pos += directive.length
+    @skipWhitespace()
+    if directive == "macro"
+      @parseMacroDirective()
+    else if directive == "define"
+      @parseDefineDirective()
+    else
+      throw new ParseException("Unknown directive: " + directive)
+
+  # returns an object containing:
+  #   - label (if any)
+  #   - op (if any)
+  #   - args (array)
+  #   - argpos (array)
+  parseLine: (text) ->
+    @setText(text)
+    @skipWhitespace()
+    rv = { args: [], argpos: [] }
+    if @pos == @end then return rv
+
+    if @text[@pos] == '#'
+      @pos++
+      @parseDirective()
+      return rv
+    if @text[@pos] == ':'
+      # label
+      @pos++
+      m = Parser::SymbolRegex.exec(@text.slice(@pos))
+      if not m?
+        throw new ParseException("Label name must contain only letters, digits, _ or .")
+      rv.label = m[0]
+      @pos += rv.label.length
+      @skipWhitespace()
+    return rv if @pos == @end
+
+    m = Parser::SymbolRegex.exec @text.slice(@pos)
+    if not m?
+      throw new ParseException("Inscrutable opcode (expecting operation or macro call)")
+    word = m[0].toLowerCase()
+    if @vars[word] then word = @vars[word]
+    @pos += word.length
+    @skipWhitespace()
+    rv.op = word
+
+    # if this is a a macro call, the parameters (if any) will be surrounded by parens.
+    if @macros[rv.op] and @pos < @end and @text[@pos] == '('
+      @pos++
+      @skipWhitespace()
+    return rv if @pos == @end
+
+    inString = false
+    inChar = false
+    argn = 0
+    i = @pos
+    while i < @end
+      break if (@text[i] == ';' or @text[i] == ')') and not inString and not inChar
+      if not rv.args[argn]?
+        rv.args.push("")
+        rv.argpos.push(i)
+      if @text[i] == '\\' and i + 1 < @end
+        rv.args[argn] += @text[i++]
+        rv.args[argn] += @text[i++]
+      else if (@text[i] == ',' or @text[i] == '=') and not inString and not inChar
+        if @text[i] == '=' then rv.args[argn] += '='
+        argn++
+        i++
+        while i < @end and (@text[i] == ' ' or @text[i] == '\t')
+          i++
+      else
+        rv.args[argn] += @text[i]
+        if @text[i] == '"' then inString = not inString
+        if @text[i] == "\'" then inChar = not inChar
+        i++
+    if inString
+      throw new ParseException("Expected closing \"")
+    if inChar
+      throw new ParseException("Expected closing \'")
+    rv
+
+#    if (text.charAt(pos) == "{") {
+#        line.start_block = true;
+#        pos++;
+#      }
+#      if (text.charAt(pos) == "}") {
+#        line.end_block = true;
+#        pos++;
+#      }
+
+
 
 
 exports.Parser = Parser

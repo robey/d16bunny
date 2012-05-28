@@ -63,3 +63,35 @@ describe "Parser", ->
     p.setText "cats + dogs"
     e = p.parseExpression(0)
     (-> e.evaluate(cats: 5)).should.throw(/resolve/)
+
+  it "parses comment lines", ->
+    x = new d16bunny.Parser(logger).parseLine("; comment.")
+    x.label?.should.equal(false)
+    x.op?.should.equal(false)
+    x.args.length.should.equal(0)
+
+  it "parses a single op", ->
+    x = new d16bunny.Parser(logger).parseLine("  nop")
+    x.label?.should.equal(false)
+    x.op.should.equal("nop")
+    x.args.length.should.equal(0)
+
+  it "parses a labeled line", ->
+    x = new d16bunny.Parser(logger).parseLine(":start")
+    x.label.should.equal("start")
+    x.op?.should.equal(false)
+    x.args.length.should.equal(0)
+
+  it "parses a line with operands", ->
+    x = new d16bunny.Parser(logger).parseLine(":last set [a], ','")
+    x.label.should.equal("last")
+    x.op.should.equal("set")
+    x.args.should.eql([ "[a]", "','" ])
+    x.argpos.should.eql([ 10, 15 ])
+
+  it "parses a constant definition", ->
+    x = new d16bunny.Parser(logger).parseLine("screen = 0x8000")
+    x.label?.should.equal(false)
+    x.op.should.equal("screen")
+    x.args.should.eql([ "=", "0x8000" ])
+    x.argpos.should.eql([ 7, 9 ])

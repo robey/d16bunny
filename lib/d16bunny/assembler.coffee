@@ -16,6 +16,48 @@ class Assembler
 
   Reserved: (x for x of Assembler::Registers).concat(x for x of Assembler::Specials)
 
+  BinaryOp:
+    "set": 0x01
+    "add": 0x02
+    "sub": 0x03
+    "mul": 0x04
+    "mli": 0x05
+    "div": 0x06
+    "dvi": 0x07
+    "mod": 0x08
+    "mdi": 0x09
+    "and": 0x0a
+    "bor": 0x0b
+    "xor": 0x0c
+    "shr": 0x0d
+    "asr": 0x0e
+    "shl": 0x0f
+    "ifb": 0x10
+    "ifc": 0x11
+    "ife": 0x12
+    "ifn": 0x13
+    "ifg": 0x14
+    "ifa": 0x15
+    "ifl": 0x16
+    "ifu": 0x17
+    "adx": 0x1a
+    "sbx": 0x1b
+    "sti": 0x1e
+    "std": 0x1f
+  SpecialOp:
+    "jsr": 0x01
+    "hcf": 0x07
+    "int": 0x08
+    "iag": 0x09
+    "ias": 0x0a
+    "rfi": 0x0b
+    "iaq": 0x0c
+    "hwn": 0x10
+    "hwq": 0x11
+    "hwi": 0x12
+  ReservedOp: (x for x of Assembler::BinaryOp).concat(x for x of Assembler::SpecialOp).concat(
+    [ "jmp", "brk", "ret", "bra", "dat", "org" ])
+
   constructor: ->
 
 exports.Assembler = Assembler
