@@ -287,18 +287,12 @@ class Assembler
 
   # a directive starts with "#".
   parseDirective: ->
-    m = Assembler::SymbolRegex.exec(@text.slice(@pos))
-    if not m?
-      throw new ParseException("Expected directive name after #")
-    directive = m[0].toLowerCase()
-    @pos += directive.length
+    directive = @parseWord("Directive")
     @skipWhitespace()
-    if directive == "macro"
-      @parseMacroDirective()
-    else if directive == "define"
-      @parseDefineDirective()
-    else
-      throw new ParseException("Unknown directive: " + directive)
+    switch directive
+      when "macro" then @parseMacroDirective()
+      when "define" then @parseDefineDirective()
+      else throw new ParseException("Unknown directive: " + directive)
 
   # returns an object containing:
   #   - label (if any)
@@ -322,24 +316,14 @@ class Assembler
       @parseDirective()
       return rv
     if @text[@pos] == ':'
-      # label
       @pos++
-      m = Assembler::SymbolRegex.exec(@text.slice(@pos))
-      if not m?
-        throw new ParseException("Label name must contain only letters, digits, _ or .")
-      rv.label = m[0]
-      @pos += rv.label.length
+      rv.label = @parseWord("Label")
       @skipWhitespace()
     return rv if @pos == @end
 
-    m = Assembler::SymbolRegex.exec @text.slice(@pos)
-    if not m?
-      throw new ParseException("Inscrutable opcode (expecting operation or macro call)")
-    word = m[0].toLowerCase()
-    if @vars[word] then word = @vars[word]
-    @pos += word.length
+    rv.op = @parseWord("Operation name")
+    if @vars[rv.op] then rv.op = @vars[rv.op]
     @skipWhitespace()
-    rv.op = word
 
     # if this is a a macro call, the parameters (if any) will be surrounded by parens.
     if @macros[rv.op] and @pos < @end and @text[@pos] == '('
@@ -375,15 +359,6 @@ class Assembler
     if inChar
       throw new ParseException("Expected closing \'")
     rv
-
-#    if (text.charAt(pos) == "{") {
-#        line.start_block = true;
-#        pos++;
-#      }
-#      if (text.charAt(pos) == "}") {
-#        line.end_block = true;
-#        pos++;
-#      }
 
 
 
