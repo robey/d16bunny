@@ -300,7 +300,20 @@ class Assembler
       expr = if expr.left.register? then expr.right else expr.left
       return { loc: loc, code: 0x10 + register, expr: expr }
 
-    { loc: loc, code: (if inPointer then 0x1e else 0x1f), expr: expr }
+    { loc: loc, code: (if inPointer then 0x1e else 0x1f), expr: expr, destination: destination }
+
+  # attempt to resolve the expression in this operand. returns true on success, and sets:
+  #   - immediate: (optional) immediate value for this operand
+  resolveOperand: (operand) ->
+    if not operand.expr? then return true
+    if not operand.expr.resolvable(@symtab) then return false
+    value = operand.expr.evaluate(@symtab) & 0xffff
+    if operand.code == 0x1f and (value == 0xffff or value < 31) and not operand.destination
+      operand.code = 0x20 + (if value == 0xffff then 0x00 else (0x01 + value))
+    else
+      operand.immediate = value
+    delete operand.expr
+    true
 
   parseMacroDirective: ->
     loc = @pos
@@ -472,7 +485,66 @@ class Assembler
         @skipWhitespace()
     line
 
+  # compile a line of code at a given address.
+  # fields that can't be resolved yet will be left as expression trees, but the data size will be
+  # computed.
+  # returns an object with:
+  #   - data: compiled output, made up either of words or unresolved expression trees
+  #   - org: (optional) if the origin was changed
+  #   - branchFrom: (optional) if this is a relative-branch instruction
+  compileLine: (text, org) ->
+    @compileParsedLine(@parseLine(text), org)
 
+  compileParsedLine: (line, org) ->
+    if line.label? then @symtab[line.label] = org
+    if not line.op? then return { data: [] }
+    if line.data? then return { data: line.data }
+    if line.expanded?
+      info = { data: [] }
+      for x in line.expanded
+        newinfo = @compileParsedLine(x, org)
+        info.data = info.data.concat(newinfo.data)
+        if info.org? then org = info.org else org += newinfo.data.size
+      return info
+
+    if line.op == "org"
+      if line.operands.length != 1 then @fail 0, "ORG requires a single parameter"
+      if not line.operands[0].resolvable(@symtab)
+        @fail line.operands[0].pos, "ORG must be a constant expression with no forward references"
+      info = { org: line.operands[0].evaluate(@symtab) }
+      if line.label? then @symtab[line.label] = info.org
+      return info
+
+    # convenient aliases
+    if line.op == "jmp"
+      if line.operands.length != 1 then @fail 0, "JMP requires a single parameter"
+      line.op = "set"
+      @setText("pc")
+      line.operands.unshift(@parseOperand(true))
+      return @compileParsedLine(line)
+    if line.op == "brk"
+      if line.operands.length != 0 then @fail 0, "BRK has no parameters"
+      return @compileLine("sub pc, 1", org)
+    if line.op == "ret"
+      if line.operands.length != 0 then @fail 0, "RET has no parameters"
+      return @compileLine("set pc, pop", org)
+    if line.op == "bra"
+      # we'll compute the branch on the 2nd pass.
+      return { data: [ 0 ], branchFrom: org + 1 }
+
+    info = { data: [ 0 ] }
+    for i in [line.operands.length - 1 .. 0]
+      x = line.operands[i]
+      @resolveOperand(x)
+      if x.expr? then info.data.push(x.expr)
+      if x.immediate? then info.data.push(x.immediate)
+    if Dcpu.BinaryOp[line.op]?
+      if line.operands.length != 2 then @fail 0, line.op.toUpperCase() + " requires 2 parameters"
+      info.data[0] = (line.operands[1].code << 10) | (line.operands[0].code << 5) | Dcpu.BinaryOp[line.op]
+    else if Dcpu.SpecialOp[line.op]?
+      if line.operands.length != 1 then @fail 0, line.op.toUpperCase() + " requires 1 parameter"
+      info.data[0] = (line.operands[0].code << 10) | (Dcpu.SpecialOp[line.op] << 5)
+    info
 
 
 exports.Assembler = Assembler

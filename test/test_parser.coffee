@@ -71,21 +71,63 @@ describe "Parser", ->
     x = a.parseString()
     x.should.equal("hello sailor!")
 
-  it "parses pointer operands", ->
+describe "Assembler.parseOperand", ->
+  logger = (pos, message, fatal) ->
+
+  it "parses registers", ->
+    a = new d16bunny.Assembler(logger)
+    a.setText("j")
+    info = a.parseOperand(destination = false)
+    info.code.should.equal(7)
+    info.expr?.should.equal(false)
+
+  it "parses register pointers", ->
+    a = new d16bunny.Assembler(logger)
+    a.setText("[j]")
+    info = a.parseOperand(destination = false)
+    info.code.should.equal(15)
+    info.expr?.should.equal(false)
+
+  it "parses special stack operations", ->
+    a = new d16bunny.Assembler(logger)
+    a.setText("peek")
+    info = a.parseOperand(destination = false)
+    info.code.should.equal(0x19)
+    info.expr?.should.equal(false)
+
+  it "parses immediates", ->
+    a = new d16bunny.Assembler(logger)
+    a.setText("0x800")
+    info = a.parseOperand(destination = false)
+    info.code.should.equal(0x1f)
+    info.expr.evaluate().should.equal(0x800)
+
+  it "parses immediate pointers", ->
+    a = new d16bunny.Assembler(logger)
+    a.setText("[0x800]")
+    info = a.parseOperand(destination = false)
+    info.code.should.equal(0x1e)
+    info.expr.evaluate().should.equal(0x800)
+
+  it "parses pointer operations", ->
     a = new d16bunny.Assembler(logger)
     a.setText("[0x20 + x]")
     info = a.parseOperand(destination = false)
     info.code.should.equal(0x13)
     info.expr.evaluate().should.equal(32)
+    a.setText("[15+24+i]")
+    info = a.parseOperand(destination = false)
+    info.code.should.equal(0x16)
+    info.expr.evaluate().should.equal(39)
 
-  it "parses pick operands", ->
+  it "parses pick", ->
     a = new d16bunny.Assembler(logger)
     a.setText("pick leftover - 23")
     info = a.parseOperand(destination = false)
     info.code.should.equal(0x1a)
     info.expr.evaluate(leftover: 25).should.equal(2)
 
-describe "Parser.parseLine", ->
+describe "Assemble.parseLine", ->
   logger = (pos, message, fatal) ->
 
   it "parses comment lines", ->
@@ -150,4 +192,30 @@ describe "Parser.parseLine", ->
     line.op.should.equal("dat")
     line.data.length.should.equal(8)
     line.data.should.eql([ 3, 9, 0x40, 0x63, 0x61, 0x74, 0x6361, 0x7400 ])
+
+describe "Parser.compileLine", ->
+  logger = (pos, message, fatal) ->
+
+  it "compiles a simple set", ->
+    a = new d16bunny.Assembler(logger)
+    info = a.compileLine("set a, 0", 0x200)
+    info.should.eql(data: [ 0x8401 ])
+
+  it "compiles a simple set with a label", ->
+    a = new d16bunny.Assembler(logger)
+    info = a.compileLine(":start set i, 1", 0x200)
+    info.should.eql(data: [ 0x88c1 ])
+    a.symtab.should.eql(start: 0x200)
+
+  it "compiles a special (jsr)", ->
+    a = new d16bunny.Assembler(logger)
+    a.symtab.cout = 0x999
+    info = a.compileLine("jsr cout", 0x200)
+    info.should.eql(data: [ 0x7c20, 0x999 ])
+
+  it "compiles a jmp", ->
+    a = new d16bunny.Assembler(logger)
+    a.symtab.cout = 0x999
+    info = a.compileLine("jmp cout", 0x200)
+    info.should.eql(data: [ 0x7f81, 0x999 ])
 
