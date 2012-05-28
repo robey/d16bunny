@@ -4,10 +4,12 @@ util = require 'util'
 Dcpu = require('./dcpu').Dcpu
 
 class ParseException
-  constructor: (@text, @pos, @message) ->
-  toString: -> 
+  constructor: (@text, @pos, message) ->
+    @message = @format(message)
+
+  format: (message) -> 
     spacer = if @pos == 0 then "" else (" " for i in [1 .. @pos]).join("")
-    "\n" + @text + "\n" + spacer + "^\n" + @message + "\n"
+    "\n" + @text + "\n" + spacer + "^\n" + message + "\n"
 
 # an expression tree.
 class Expression
@@ -367,6 +369,7 @@ class Assembler
     if inChar then @fail @pos, "Expected closing \'"
     args
 
+  # expand a macro call, recursively parsing the nested lines
   parseMacroCall: (line) ->
     if @pos < @end and @text[@pos] == '('
       @pos++
@@ -384,21 +387,42 @@ class Assembler
       @vars[k] = v
     for i in [0 .. args.length - 1]
       @vars[macro.params[i]] = args[i]
-
-    line.expanded = []
-    for x in macro.lines
-      # @compileLine(...)
-      # line.size += newline.size
-      # line.expanded.push(newline)
-      x
-
+    line.expanded = (@parseLine(x) for x in macro.lines)
     @vars = old_vars
+    line
+
+  # read a list of data objects, which could each be an expression or a string.
+  parseData: (line) ->
+    data = []
+    while @pos < @end
+      if @text[@pos] == '"'
+        s = @parseString()
+        data.push(s.charCodeAt(i)) for i in [0 .. s.length - 1]
+      else if @pos + 1 < @end and @text[@pos] == 'p' and @text[@pos + 1] == '"'
+        # packed string
+        @pos++
+        s = @parseString()
+        word = 0
+        inWord = false
+        for i in [0 .. s.length - 1]
+          ch = s.charCodeAt(i)
+          if inWord then data.push(word | ch) else (word = ch << 8)
+          inWord = not inWord
+        if inWord then data.push(word)
+      else
+        expr = @parseExpression(0)
+        data.push(if expr.resolvable(@symtab) then expr.evaluate(@symtab) else expr)
+      if @pos < @end and @text[@pos] == ','
+        @pos++
+        @skipWhitespace()
+    line.data = data
     line
 
   # returns an object containing:
   #   - label (if any)
   #   - op (if any)
-  #   - args (array of expressions, if present)
+  #   - operands (array of expressions, if present)
+  #   - data (array of expressions, if this is a data line)
   #   - expanded (a sub-list of line objects, if a macro was expanded)
   parseLine: (text) ->
     @setText(text)
@@ -437,33 +461,15 @@ class Assembler
       return line
 
     if @macros[line.op] then return @parseMacroCall(line)
+    if line.op == "dat" then return @parseData(line)
 
-
-    rv = {}
-    inString = false
-    inChar = false
-    argn = 0
-    i = @pos
-    while i < @end
-      break if (@text[i] == ';' or @text[i] == ')') and not inString and not inChar
-      if not rv.args[argn]?
-        rv.args.push("")
-        rv.argpos.push(i)
-      if @text[i] == '\\' and i + 1 < @end
-        rv.args[argn] += @text[i++]
-        rv.args[argn] += @text[i++]
-      else if @text[i] == ',' and not inString and not inChar
-        argn++
-        i++
-        while i < @end and (@text[i] == ' ' or @text[i] == '\t')
-          i++
-      else
-        rv.args[argn] += @text[i]
-        if @text[i] == '"' then inString = not inString
-        if @text[i] == "\'" then inChar = not inChar
-        i++
-    if inString then @fail @pos, "Expected closing \""
-    if inChar then @fail @pos, "Expected closing \'"
+    # any other operation is assumed to take actual operands
+    line.operands = []
+    while @pos < @end
+      line.operands.push(@parseOperand(line.operands.length == 0))
+      if @pos < @end and @text[@pos] == ','
+        @pos++
+        @skipWhitespace()
     line
 
 
