@@ -19,12 +19,14 @@ class Expression
     e.register = r
     e.evaluate = (symtab) ->
       throw new ParseException("Constant expressions may not contain register references")
+    e.toString = -> Dcpu.RegisterNames[@register] if @register
     e
 
   Literal: (loc, n) ->
     e = new Expression(loc)
     e.literal = n
     e.evaluate = (symtab) -> @literal
+    e.toString = -> @literal.toString()
     e
 
   Label: (loc, x) ->
@@ -36,6 +38,7 @@ class Expression
       if not symtab[@label]
         throw new UnresolvableException("Can't resolve reference to " + @label)
       symtab[@label]
+    e.toString = -> @label
     e
 
   Unary: (loc, op, r) ->
@@ -47,6 +50,7 @@ class Expression
       switch @unary
         when '-' then -r
         else r
+    e.toString = -> "(" + @unary + @right.toString() + ")"
     e
 
   Binary: (loc, op, l, r) ->
@@ -69,25 +73,45 @@ class Expression
         when '^' then l ^ r
         when '|' then l | r
         else throw "Internal error (undefined binary operator)"
+    e.toString = -> "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")"
+    e
+
+  # things that can only be at the top of an operand:
+  Pointer: (loc, x) ->
+    e = new Expression(loc)
+    e.pointer = x
+    e.toString = -> "[" + @pointer.toString() + "]"
+    e
+
+  Pick: (loc, x) ->
+    e = new Expression(loc)
+    e.pick = x
+    e.toString = -> "PICK " + @pick.toString()
+    e
+
+  String: (loc, x) ->
+    e = new Expression(loc)
+    e.string = x
+    e.toString = -> util.inspect(@string)
+    e
+
+  PackedString: (loc, x) ->
+    e = new Expression(loc)
+    e.packedString = x
+    e.toString = -> "p" + util.inspect(@packedString)
     e
 
   constructor: (@loc) ->
 
   # for debugging.
-  toString: ->
-    return @literal.toString() if @literal
-    return @label if @label
-    return Dcpu.RegisterNames[@register] if @register
-    return "(" + @unary + @right.toString() + ")" if @unary
-    return "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")" if @binary
-    "ERROR"
+  toString: -> throw "must be implemented in objects"
 
   # Given a symbol table of names and values, resolve this expression tree
   # into a single number. Any register reference, or reference to a symbol
   # that isn't defined in 'symtab' will be an error.
-  evaluate: (symtab) ->
-    throw "must be implemented in objects"
+  evaluate: (symtab) -> throw "must be implemented in objects"
 
+# FIXME : 
 #    if (value < 0 || value > 0xffff) {
 #      logger(pos, "(Warning) Literal value " + value.toString(16) + " will be truncated to " + (value & 0xffff).toString(16));
 #     value = value & 0xffff;
@@ -198,7 +222,6 @@ class Assembler
       # literal char
       [ ch, @pos ] = @unquoteChar(@text, @pos + 1, @end)
       if @pos == @end or @text[@pos] != "'"
-        @logTroubleSpot()
         throw new ParseException("Expected ' to close literal char")
       @pos++
       Expression::Literal(loc, ch.charCodeAt(0))
@@ -243,7 +266,7 @@ class Assembler
     left = @parseUnary()
     loop
       @skipWhitespace()
-      return left if @pos == @end or @text[@pos] == ")" or @text[@pos] == ','
+      return left if @pos == @end or @text[@pos] == ')' or @text[@pos] == ',' or @text[@pos] == ']'
       op = @text[@pos]
       if not Assembler::Binary[op]
         op += @text[@pos + 1]
@@ -254,6 +277,37 @@ class Assembler
       @pos += op.length
       right = @parseExpression(newPrecedence)
       left = Expression::Binary(loc, op, left, right)
+
+  parseString: ->
+    rv = ""
+    while @pos < @end and @text[@pos] != '"'
+      [ ch, @pos ] = @unquoteChar(@text, @pos, @end)
+      rv += ch
+    if @pos == @end
+      throw new ParseException("Expected \" to close string")
+    @pos++
+    rv
+
+  # parse out an operand, which might be any expression, including strings.
+  parseOperand: ->
+    loc = @pos
+    if @text[@pos] == '['
+      @pos++
+      expr = @parseExpression(0)
+      if @pos == @end or @text[@pos] != ']'
+        throw new ParseException("Expected ]")
+      @pos++
+      return Expression::Pointer(loc, expr)
+    if @pos + 4 < @end and @text.substr(@pos, 4).toLowerCase() == "pick"
+      @pos += 4
+      return Expression::Pick(loc, @parseExpression(0))
+    if @pos + 1 < @end and @text[@pos] == 'p' and @text[@pos + 1] == '"'
+      @pos += 2
+      return Expression::PackedString(loc, @parseString())
+    if @text[@pos] == '"'
+      @pos++
+      return Expression::String(loc, @parseString())
+    @parseExpression(0)
 
   parseMacroDirective: ->
     name = @parseWord("Macro name")
@@ -325,6 +379,16 @@ class Assembler
     if @vars[rv.op] then rv.op = @vars[rv.op]
     @skipWhitespace()
 
+    if @text[@pos] == '='
+      # special case "name = value"
+      name = rv.op
+      delete rv['op']
+      @pos++
+      @skipWhitespace()
+      value = @parseExpression(0).evaluate()
+      @symtab[name] = value
+      return rv
+
     # if this is a a macro call, the parameters (if any) will be surrounded by parens.
     if @macros[rv.op] and @pos < @end and @text[@pos] == '('
       @pos++
@@ -343,8 +407,7 @@ class Assembler
       if @text[i] == '\\' and i + 1 < @end
         rv.args[argn] += @text[i++]
         rv.args[argn] += @text[i++]
-      else if (@text[i] == ',' or @text[i] == '=') and not inString and not inChar
-        if @text[i] == '=' then rv.args[argn] += '='
+      else if @text[i] == ',' and not inString and not inChar
         argn++
         i++
         while i < @end and (@text[i] == ' ' or @text[i] == '\t')

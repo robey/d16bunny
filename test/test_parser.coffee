@@ -1,7 +1,8 @@
 should = require 'should'
+util = require 'util'
 d16bunny = require '../lib/d16bunny'
 
-describe "Assembler", ->
+describe "Parser", ->
   logger = (pos, message, fatal) ->
 
   it "unquotes chars", ->
@@ -89,12 +90,17 @@ describe "Assembler", ->
     x.args.should.eql([ "[a]", "','" ])
     x.argpos.should.eql([ 10, 15 ])
 
-  it "parses a constant definition", ->
-    x = new d16bunny.Assembler(logger).parseLine("screen = 0x8000")
+  it "parses a definition with =", ->
+    a = new d16bunny.Assembler(logger)
+    x = a.parseLine("screen = 0x8000")
     x.label?.should.equal(false)
-    x.op.should.equal("screen")
-    x.args.should.eql([ "=", "0x8000" ])
-    x.argpos.should.eql([ 7, 9 ])
+    x.op?.should.equal(false)
+    a.symtab.should.eql(screen: 0x8000)
+
+  it "parses a definition with #define", ->
+    a = new d16bunny.Assembler(logger)
+    x = a.parseLine("#define happy 23")
+    a.symtab.should.eql(happy: 23)
 
   it "parses a macro definition", ->
     a = new d16bunny.Assembler(logger)
@@ -117,9 +123,25 @@ describe "Assembler", ->
       "  set right, pop"
     ])
 
-  it "parses a definition", ->
+  it "parses string literals", ->
     a = new d16bunny.Assembler(logger)
-    x = a.parseLine("#define happy 23")
-    a.symtab.should.eql(happy: 23)
+    a.setText("\"hello sailor\\x21\"")
+    x = a.parseOperand()
+    x.toString().should.equal("'hello sailor!'")
+    a.setText("p\"hello sailor\\x21\"")
+    x = a.parseOperand()
+    x.toString().should.equal("p'hello sailor!'")
+
+  it "parses pointers", ->
+    a = new d16bunny.Assembler(logger)
+    a.setText("[0x20 + x]")
+    x = a.parseOperand()
+    x.toString().should.equal("[(32 + X)]")
+
+  it "parses pick expressions", ->
+    a = new d16bunny.Assembler(logger)
+    a.setText("pick leftover - 23")
+    x = a.parseOperand()
+    x.toString().should.equal("PICK (leftover - 23)")
 
 
