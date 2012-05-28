@@ -92,8 +92,8 @@ class Expression
 #      logger(pos, "(Warning) Literal value " + value.toString(16) + " will be truncated to " + (value & 0xffff).toString(16));
 #     value = value & 0xffff;
 
-# parse bits of a line of assembly.
-class Parser
+# compile lines of DCPU assembly.
+class Assembler
   # precedence of supported binary operators in expressions
   Binary:
     '*': 10
@@ -198,21 +198,21 @@ class Parser
       @pos++
       Expression::Register(loc, register)
     else
-      operand = Parser::OperandRegex.exec(@text.slice(@pos, @end))
+      operand = Assembler::OperandRegex.exec(@text.slice(@pos, @end))
       if not operand?
         throw new ParseException("Expected operand value")
       operand = operand[0].toLowerCase()
       @pos += operand.length
       operand = @vars[operand].toLowerCase() if @vars[operand]?
-      if Parser::NumberRegex.exec(operand)?
+      if Assembler::NumberRegex.exec(operand)?
         Expression::Literal(loc, parseInt(operand, 10))
-      else if Parser::HexRegex.exec(operand)?
+      else if Assembler::HexRegex.exec(operand)?
         Expression::Literal(loc, parseInt(operand, 16))
-      else if Parser::BinaryRegex.exec(operand)?
+      else if Assembler::BinaryRegex.exec(operand)?
         Expression::Literal(loc, parseInt(operand.slice(2), 2))
       else if Dcpu.Registers[operand]?
         Expression::Register(loc, Dcpu.Registers[operand])
-      else if Parser::LabelRegex.exec(operand)?
+      else if Assembler::LabelRegex.exec(operand)?
         Expression::Label(loc, operand)
 
   parseUnary: ->
@@ -232,9 +232,9 @@ class Parser
       @skipWhitespace()
       return left if @pos == @end or @text[@pos] == ")"
       op = @text[@pos]
-      if not Parser::Binary[op]
+      if not Assembler::Binary[op]
         op += @text[@pos + 1]
-      if not (newPrecedence = Parser::Binary[op])?
+      if not (newPrecedence = Assembler::Binary[op])?
         throw new ParseException("Unknown operator (try: + - * / %)")
       return left if newPrecedence <= precedence
       loc = @pos
@@ -243,7 +243,7 @@ class Parser
       left = Expression::Binary(loc, op, left, right)
 
   parseMacroDirective: ->
-    m = Parser::SymbolRegex.exec(@text.slice(@pos))
+    m = Assembler::SymbolRegex.exec(@text.slice(@pos))
     if not m?
       throw new ParseException("Macro name must contain only letters, digits, _ or .")
     name = m[0].toLowerCase()
@@ -258,7 +258,7 @@ class Parser
       @skipWhitespace()
       while @pos < @end and @text[pos] != ')'
         break if @text[pos] == ')'
-        m = Parser::SymbolRegex.exec(@text.slice(@pos))
+        m = Assembler::SymbolRegex.exec(@text.slice(@pos))
         if not m?
           throw new ParseException("Expected macro parameter name")
         argName = m[0].toLowerCase()
@@ -279,7 +279,7 @@ class Parser
 
   # a directive starts with "#".
   parseDirective: ->
-    m = Parser::SymbolRegex.exec(@text.slice(@pos))
+    m = Assembler::SymbolRegex.exec(@text.slice(@pos))
     if not m?
       throw new ParseException("Expected directive name after #")
     directive = m[0].toLowerCase()
@@ -310,7 +310,7 @@ class Parser
     if @text[@pos] == ':'
       # label
       @pos++
-      m = Parser::SymbolRegex.exec(@text.slice(@pos))
+      m = Assembler::SymbolRegex.exec(@text.slice(@pos))
       if not m?
         throw new ParseException("Label name must contain only letters, digits, _ or .")
       rv.label = m[0]
@@ -318,7 +318,7 @@ class Parser
       @skipWhitespace()
     return rv if @pos == @end
 
-    m = Parser::SymbolRegex.exec @text.slice(@pos)
+    m = Assembler::SymbolRegex.exec @text.slice(@pos)
     if not m?
       throw new ParseException("Inscrutable opcode (expecting operation or macro call)")
     word = m[0].toLowerCase()
@@ -374,5 +374,6 @@ class Parser
 
 
 
-exports.Parser = Parser
+exports.Assembler = Assembler
 exports.ParseException = ParseException
+exports.UnresolvableException = UnresolvableException
