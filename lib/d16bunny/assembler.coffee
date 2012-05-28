@@ -80,7 +80,7 @@ class Expression
     e.resolvable = (symtab) -> @left.resolvable(symtab) and @right.resolvable(symtab)
     e
 
-  constructor: (@loc) ->
+  constructor: (@text, @pos) ->
 
   # for debugging.
   toString: -> throw "must be implemented in objects"
@@ -93,10 +93,6 @@ class Expression
   # can this expression's references be resolved by the symtab (yet)?
   resolvable: (symtab) -> throw "must be implemented in objects"
 
-# FIXME : 
-#    if (value < 0 || value > 0xffff) {
-#      logger(pos, "(Warning) Literal value " + value.toString(16) + " will be truncated to " + (value & 0xffff).toString(16));
-#     value = value & 0xffff;
 
 # compile lines of DCPU assembly.
 class Assembler
@@ -134,6 +130,14 @@ class Assembler
     @macros = {}
     # current symbol table:
     @symtab = {}
+
+  debug: (list...) ->
+    unless @debugger? then return
+    slist = for item in list
+      switch typeof item
+        when 'string' then item.toString()
+        else require('./smoosher.coffee').smoosh.smoosh(item)
+    @debugger(slist.join(""))
 
   # useful for unit tests
   setText: (text) ->
@@ -400,6 +404,7 @@ class Assembler
       @vars[k] = v
     for i in [0 .. args.length - 1]
       @vars[macro.params[i]] = args[i]
+    @debug "  new vars: ", @vars
     line.expanded = (@parseLine(x) for x in macro.lines)
     @vars = old_vars
     line
@@ -459,6 +464,7 @@ class Assembler
       @skipWhitespace()
     return line if @pos == @end
 
+    line.pos = @pos
     line.op = @parseWord("Operation name")
     if @vars[line.op] then line.op = @vars[line.op]
     @skipWhitespace()
@@ -493,22 +499,26 @@ class Assembler
   #   - org: (optional) if the origin was changed
   #   - branchFrom: (optional) if this is a relative-branch instruction
   compileLine: (text, org) ->
+    @debug "+ compile line @ ", org, ": ", text
     @compileParsedLine(@parseLine(text), org)
 
   compileParsedLine: (line, org) ->
+    @debug "  parsed line: ", line
     if line.label? then @symtab[line.label] = org
-    if not line.op? then return { data: [] }
     if line.data? then return { data: line.data }
     if line.expanded?
       info = { data: [] }
       for x in line.expanded
+        @debug "  expand macro: ", x
         newinfo = @compileParsedLine(x, org)
         info.data = info.data.concat(newinfo.data)
         if info.org? then org = info.org else org += newinfo.data.size
+        @debug "  finished macro expansion: ", newinfo
       return info
+    if not line.op? then return { data: [] }
 
     if line.op == "org"
-      if line.operands.length != 1 then @fail 0, "ORG requires a single parameter"
+      if line.operands.length != 1 then @fail line.pos, "ORG requires a single parameter"
       if not line.operands[0].resolvable(@symtab)
         @fail line.operands[0].pos, "ORG must be a constant expression with no forward references"
       info = { org: line.operands[0].evaluate(@symtab) }
@@ -517,16 +527,16 @@ class Assembler
 
     # convenient aliases
     if line.op == "jmp"
-      if line.operands.length != 1 then @fail 0, "JMP requires a single parameter"
+      if line.operands.length != 1 then @fail line.pos, "JMP requires a single parameter"
       line.op = "set"
       @setText("pc")
       line.operands.unshift(@parseOperand(true))
       return @compileParsedLine(line)
     if line.op == "brk"
-      if line.operands.length != 0 then @fail 0, "BRK has no parameters"
+      if line.operands.length != 0 then @fail line.pos, "BRK has no parameters"
       return @compileLine("sub pc, 1", org)
     if line.op == "ret"
-      if line.operands.length != 0 then @fail 0, "RET has no parameters"
+      if line.operands.length != 0 then @fail line.pos, "RET has no parameters"
       return @compileLine("set pc, pop", org)
     if line.op == "bra"
       # we'll compute the branch on the 2nd pass.
@@ -539,11 +549,13 @@ class Assembler
       if x.expr? then info.data.push(x.expr)
       if x.immediate? then info.data.push(x.immediate)
     if Dcpu.BinaryOp[line.op]?
-      if line.operands.length != 2 then @fail 0, line.op.toUpperCase() + " requires 2 parameters"
+      if line.operands.length != 2 then @fail line.pos, line.op.toUpperCase() + " requires 2 parameters"
       info.data[0] = (line.operands[1].code << 10) | (line.operands[0].code << 5) | Dcpu.BinaryOp[line.op]
     else if Dcpu.SpecialOp[line.op]?
-      if line.operands.length != 1 then @fail 0, line.op.toUpperCase() + " requires 1 parameter"
+      if line.operands.length != 1 then @fail line.pos, line.op.toUpperCase() + " requires 1 parameter"
       info.data[0] = (line.operands[0].code << 10) | (Dcpu.SpecialOp[line.op] << 5)
+    else
+      @fail line.pos, "Unknown instruction: " + line.op
     info
 
 

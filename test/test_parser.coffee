@@ -219,3 +219,23 @@ describe "Parser.compileLine", ->
     info = a.compileLine("jmp cout", 0x200)
     info.should.eql(data: [ 0x7f81, 0x999 ])
 
+  it "compiles a forward reference", ->
+    a = new d16bunny.Assembler(logger)
+    info = a.compileLine("jmp cout", 0x200)
+    info.data[0].should.eql(0x7f81)
+    info.data[1].toString().should.eql("cout")
+
+  it "executes a macro", ->
+    a = new d16bunny.Assembler(logger)
+    a.macros["swap"] = [ 2 ]
+    a.macros["swap(2)"] =
+      name: "swap(2)"
+      params: [ "r1", "r2" ]
+      lines: [
+        "set push, r1"
+        "set r1, r2"
+        "set r2, pop"
+      ]
+    info = a.compileLine("swap y, z", 0x200)
+    info.data.should.eql([ 0x1301, 0x1481, 0x60a1 ])
+
