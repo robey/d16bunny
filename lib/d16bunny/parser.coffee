@@ -1,7 +1,7 @@
 
 util = require 'util'
 
-Assembler = require('./assembler').Assembler
+Dcpu = require('./dcpu').Dcpu
 
 class ParseException
   constructor: (@message) ->
@@ -31,7 +31,7 @@ class Expression
     e = new Expression(loc)
     e.label = x
     e.evaluate = (symtab) ->
-      if Assembler::Reserved[@label]
+      if Dcpu.Reserved[@label]
         throw new ParseException("You can't use " + @label.toUpperCase() + " in expressions.")
       if not symtab[@label]
         throw new UnresolvableException("Can't resolve reference to " + @label)
@@ -77,7 +77,7 @@ class Expression
   toString: ->
     return @literal.toString() if @literal
     return @label if @label
-    return Assembler::RegisterNames[@register] if @register
+    return Dcpu.RegisterNames[@register] if @register
     return "(" + @unary + @right.toString() + ")" if @unary
     return "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")" if @binary
     "ERROR"
@@ -192,7 +192,7 @@ class Parser
     else if @text[@pos] == "%"
       # allow unix-style %A for register names
       @pos++
-      register = Assembler::Registers[@text[@pos].toLowerCase()]
+      register = Dcpu.Registers[@text[@pos].toLowerCase()]
       if not register?
         throw new ParseException("Expected register name")
       @pos++
@@ -210,8 +210,8 @@ class Parser
         Expression::Literal(loc, parseInt(operand, 16))
       else if Parser::BinaryRegex.exec(operand)?
         Expression::Literal(loc, parseInt(operand.slice(2), 2))
-      else if Assembler::Registers[operand]?
-        Expression::Register(loc, Assembler::Registers[operand])
+      else if Dcpu.Registers[operand]?
+        Expression::Register(loc, Dcpu.Registers[operand])
       else if Parser::LabelRegex.exec(operand)?
         Expression::Label(loc, operand)
 
@@ -249,7 +249,7 @@ class Parser
     name = m[0].toLowerCase()
     @pos += name.length
     @skipWhitespace()
-    if Assembler::Reserved[name] or Assembler::ReservedOp[name]
+    if Dcpu.Reserved[name] or Dcpu.ReservedOp[name]
       throw new ParseException("Invalid name for macro: " + name)
 
     argNames = []

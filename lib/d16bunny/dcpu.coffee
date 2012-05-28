@@ -1,7 +1,4 @@
-
-util = require 'util'
-
-class Assembler
+Dcpu =
   Registers: { "a": 0, "b": 1, "c": 2, "x": 3, "y": 4, "z": 5, "i": 6, "j": 7 }
   RegisterNames: "ABCXYZIJ"
 
@@ -13,8 +10,6 @@ class Assembler
     "sp":   0x1b
     "pc":   0x1c
     "ex":   0x1d
-
-  Reserved: (x for x of Assembler::Registers).concat(x for x of Assembler::Specials)
 
   BinaryOp:
     "set": 0x01
@@ -55,9 +50,10 @@ class Assembler
     "hwn": 0x10
     "hwq": 0x11
     "hwi": 0x12
-  ReservedOp: (x for x of Assembler::BinaryOp).concat(x for x of Assembler::SpecialOp).concat(
-    [ "jmp", "brk", "ret", "bra", "dat", "org" ])
 
-  constructor: ->
+Dcpu.Reserved = (x for x of Dcpu.Registers).concat(x for x of Dcpu.Specials)
 
-exports.Assembler = Assembler
+Dcpu.ReservedOp = (x for x of Dcpu.BinaryOp).concat(x for x of Dcpu.SpecialOp).concat(
+  [ "jmp", "brk", "ret", "bra", "dat", "org" ])
+
+exports.Dcpu = Dcpu
