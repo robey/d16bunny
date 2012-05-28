@@ -1,8 +1,8 @@
 dcpu = require './d16bunny/dcpu.coffee'
-parser = require './d16bunny/parser.coffee'
+assembler = require './d16bunny/assembler.coffee'
 
 exports.Dcpu = dcpu.Dcpu
 
-exports.Assembler = parser.Assembler
-exports.ParseException = parser.ParseException
-exports.UnresolvableException = parser.UnresolvableException
+exports.Assembler = assembler.Assembler
+exports.ParseException = assembler.ParseException
+exports.UnresolvableException = assembler.UnresolvableException
