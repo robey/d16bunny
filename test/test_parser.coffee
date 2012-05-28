@@ -95,3 +95,31 @@ describe "Assembler", ->
     x.op.should.equal("screen")
     x.args.should.eql([ "=", "0x8000" ])
     x.argpos.should.eql([ 7, 9 ])
+
+  it "parses a macro definition", ->
+    a = new d16bunny.Assembler(logger)
+    x = a.parseLine("#macro swap(left, right) {")
+    x.op?.should.equal(false)
+    a.macros["swap(2)"].name.should.eql("swap(2)")
+    a.macros["swap(2)"].params.should.eql([ "left", "right" ])
+    x = a.parseLine("  set push, left")
+    x.op?.should.equal(false)
+    x = a.parseLine("  set left, right")
+    x.op?.should.equal(false)
+    x = a.parseLine("  set right, pop")
+    x.op?.should.equal(false)
+    x = a.parseLine("}")
+    x.op?.should.equal(false)
+    a.inMacro.should.equal(false)
+    a.macros["swap(2)"].lines.should.eql([
+      "  set push, left",
+      "  set left, right",
+      "  set right, pop"
+    ])
+
+  it "parses a definition", ->
+    a = new d16bunny.Assembler(logger)
+    x = a.parseLine("#define happy 23")
+    a.symtab.should.eql(happy: 23)
+
+

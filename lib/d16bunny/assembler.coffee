@@ -126,6 +126,8 @@ class Assembler
     @vars = {}
     # macros that have been defined:
     @macros = {}
+    # current symbol table:
+    @symtab = {}
 
   # useful for unit tests
   setText: (text) ->
@@ -137,8 +139,9 @@ class Assembler
     spacer = if pos == 0 then "" else (" " for i in [1..pos]).join("")
     [ @text, spacer + "^" ]
 
-  logTroubleSpot: (pos = @pos) ->
+  logTroubleSpot: (e, pos = @pos) ->
     console.log("")
+    console.log(e.toString())
     console.log(x) for x in @troubleSpot()
 
   skipWhitespace: ->
@@ -148,6 +151,16 @@ class Assembler
     if c == ';'
       # truncate line at comment
       @end = @pos
+
+  parseWord: (name) ->
+    m = Assembler::SymbolRegex.exec(@text.slice(@pos))
+    if not m?
+      throw new ParseException(name + " must contain only letters, digits, _ or .")
+    word = m[0].toLowerCase()
+    @pos += word.length
+    if Dcpu.Reserved[word] or Dcpu.ReservedOp[word]
+      throw new ParseException("Reserved keyword: " + word)
+    word
 
   unquoteChar: (text, pos, end) ->
     rv = if text[pos] == '\\' and pos + 1 < end
@@ -230,12 +243,12 @@ class Assembler
     left = @parseUnary()
     loop
       @skipWhitespace()
-      return left if @pos == @end or @text[@pos] == ")"
+      return left if @pos == @end or @text[@pos] == ")" or @text[@pos] == ','
       op = @text[@pos]
       if not Assembler::Binary[op]
         op += @text[@pos + 1]
       if not (newPrecedence = Assembler::Binary[op])?
-        throw new ParseException("Unknown operator (try: + - * / %)")
+        throw new ParseException("Unknown operator (try: + - * / % << >> & ^ |)")
       return left if newPrecedence <= precedence
       loc = @pos
       @pos += op.length
@@ -243,39 +256,34 @@ class Assembler
       left = Expression::Binary(loc, op, left, right)
 
   parseMacroDirective: ->
-    m = Assembler::SymbolRegex.exec(@text.slice(@pos))
-    if not m?
-      throw new ParseException("Macro name must contain only letters, digits, _ or .")
-    name = m[0].toLowerCase()
-    @pos += name.length
+    name = @parseWord("Macro name")
     @skipWhitespace()
-    if Dcpu.Reserved[name] or Dcpu.ReservedOp[name]
-      throw new ParseException("Invalid name for macro: " + name)
 
     argNames = []
-    if @pos < @end and @text[pos] == '('
+    if @pos < @end and @text[@pos] == '('
       @pos++
       @skipWhitespace()
-      while @pos < @end and @text[pos] != ')'
-        break if @text[pos] == ')'
-        m = Assembler::SymbolRegex.exec(@text.slice(@pos))
-        if not m?
-          throw new ParseException("Expected macro parameter name")
-        argName = m[0].toLowerCase()
-        argNames.push(argName)
-        @pos += argName.length
+      while @pos < @end and @text[@pos] != ')'
+        break if @text[@pos] == ')'
+        argNames.push(@parseWord("Parameter name"))
         @skipWhitespace()
-        if @text[pos] != ')' and @text[@pos] != ','
-          throw new ParseException("Expected , or )")
+        if @pos < @end and @text[@pos] == ','
+          @pos++
+          @skipWhitespace()
       if @pos == @end
         throw new ParseException("Expected )")
       @pos++
     @skipWhitespace()
-    if @pos < @end or @text[pos] != '{'
+    if @pos == @end or @text[@pos] != '{'
       throw new ParseException("Expected { to start macro definition")
-    @inMacro = true
+    @inMacro = name + "(" + argNames.length + ")"
+    @macros[@inMacro] = { name: @inMacro, lines: [], params: argNames }
 
   parseDefineDirective: ->
+    name = @parseWord("Definition name")
+    @skipWhitespace()
+    value = @parseExpression(0).evaluate()
+    @symtab[name] = value
 
   # a directive starts with "#".
   parseDirective: ->
@@ -303,6 +311,12 @@ class Assembler
     rv = { args: [], argpos: [] }
     if @pos == @end then return rv
 
+    if @inMacro
+      if @text[@pos] == '}'
+        @inMacro = false
+      else
+        @macros[@inMacro].lines.push(text)
+      return rv
     if @text[@pos] == '#'
       @pos++
       @parseDirective()
