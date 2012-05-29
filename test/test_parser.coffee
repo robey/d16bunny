@@ -2,9 +2,9 @@ should = require 'should'
 util = require 'util'
 d16bunny = require '../lib/d16bunny'
 
-describe "Parser", ->
-  logger = (pos, message, fatal) ->
+logger = (lineno, pos, message) ->
 
+describe "Parser", ->
   it "unquotes chars", ->
     p = new d16bunny.Assembler(logger)
     p.unquoteChar("x", 0, 1)[0].should.equal("x")
@@ -72,8 +72,6 @@ describe "Parser", ->
     x.should.equal("hello sailor!")
 
 describe "Assembler.parseOperand", ->
-  logger = (pos, message, fatal) ->
-
   it "parses registers", ->
     a = new d16bunny.Assembler(logger)
     a.setText("j")
@@ -128,8 +126,6 @@ describe "Assembler.parseOperand", ->
     info.expr.evaluate(leftover: 25).should.equal(2)
 
 describe "Assemble.parseLine", ->
-  logger = (pos, message, fatal) ->
-
   it "parses comment lines", ->
     x = new d16bunny.Assembler(logger).parseLine("; comment.")
     x.should.eql({})
@@ -194,36 +190,45 @@ describe "Assemble.parseLine", ->
     line.data.should.eql([ 3, 9, 0x40, 0x63, 0x61, 0x74, 0x6361, 0x7400 ])
 
 describe "Parser.compileLine", ->
-  logger = (pos, message, fatal) ->
-
   it "compiles a simple set", ->
     a = new d16bunny.Assembler(logger)
     info = a.compileLine("set a, 0", 0x200)
-    info.should.eql(data: [ 0x8401 ])
+    info.should.eql(data: [ 0x8401 ], org: 0x200)
 
   it "compiles a simple set with a label", ->
     a = new d16bunny.Assembler(logger)
     info = a.compileLine(":start set i, 1", 0x200)
-    info.should.eql(data: [ 0x88c1 ])
-    a.symtab.should.eql(start: 0x200)
+    info.should.eql(data: [ 0x88c1 ], org: 0x200)
+    a.symtab.start.should.eql(0x200)
 
   it "compiles a special (jsr)", ->
     a = new d16bunny.Assembler(logger)
     a.symtab.cout = 0x999
     info = a.compileLine("jsr cout", 0x200)
-    info.should.eql(data: [ 0x7c20, 0x999 ])
+    info.should.eql(data: [ 0x7c20, 0x999 ], org: 0x200)
 
   it "compiles a jmp", ->
     a = new d16bunny.Assembler(logger)
     a.symtab.cout = 0x999
     info = a.compileLine("jmp cout", 0x200)
-    info.should.eql(data: [ 0x7f81, 0x999 ])
+    info.should.eql(data: [ 0x7f81, 0x999 ], org: 0x200)
+
+  it "refuses a non-immediate jmp", ->
+    a = new d16bunny.Assembler(logger)
+    a.symtab.cout = 0x999
+    (-> a.compileLine("jmp [cout]", 0x200)).should.throw(/JMP/)
 
   it "compiles a forward reference", ->
     a = new d16bunny.Assembler(logger)
     info = a.compileLine("jmp cout", 0x200)
     info.data[0].should.eql(0x7f81)
-    info.data[1].toString().should.eql("cout")
+    info.data[1].toString().should.eql("cout", org: 0x200)
+
+  it "compiles an org change", ->
+    a = new d16bunny.Assembler(logger)
+    info = a.compileLine(":stack org 0xf800", 0x200)
+    info.should.eql(data: [], org: 0xf800)
+    a.symtab.stack.should.eql(0xf800)
 
   it "executes a macro", ->
     a = new d16bunny.Assembler(logger)
@@ -237,5 +242,54 @@ describe "Parser.compileLine", ->
         "set r2, pop"
       ]
     info = a.compileLine("swap y, z", 0x200)
-    info.data.should.eql([ 0x1301, 0x1481, 0x60a1 ])
+    info.data.should.eql([ 0x1301, 0x1481, 0x60a1 ], org: 0x200)
+
+describe "Assembler.resolveLine", ->
+  it "resolves a short relative branch", ->
+    a = new d16bunny.Assembler(logger)
+    info = a.compileLine("bra next", 0x200)
+    info.branchFrom?.should.equal(0x201)
+    a.symtab.next = 0x208
+    a.resolveLine(info)
+    info.data.should.eql([ 0xa382 ])
+
+describe "Assembler.compileLines", ->
+  it "compiles a small program", ->
+    code = [ "text = 0x8000", "; comment", "  set [text], 0xf052", "  bor x, y" ];
+    a = new d16bunny.Assembler(logger)
+    rv = a.compileLines(code)
+    rv.errorCount.should.equal(0)
+    infos = rv.compiled
+    a.symtab.text.should.equal(0x8000)
+    infos.length.should.equal(4)
+    infos[0].should.eql(org: 0, data: [])
+    infos[1].should.eql(org: 0, data: [])
+    infos[2].should.eql(org: 0, data: [ 0x7fc1, 0xf052, 0x8000 ])
+    infos[3].should.eql(org: 3, data: [ 0x106b ])
+
+  it "compiles a forward reference", ->
+    code = [ "org 0x1000", "jmp hello", ":hello bor x, y" ];
+    a = new d16bunny.Assembler(logger)
+    rv = a.compileLines(code)
+    rv.errorCount.should.equal(0)
+    infos = rv.compiled
+    infos.length.should.equal(3)
+    infos[0].should.eql(org: 0x1000, data: [])
+    infos[1].should.eql(org: 0x1000, data: [ 0x7f81, 0x1002 ])
+    infos[2].should.eql(org: 0x1002, data: [ 0x106b ])
+
+  it "recovers from errors", ->
+    code = [ "set a, b", "jsr hello", "bor x, y" ];
+    logs = []
+    logger = (lineno, pos, message) -> logs.push([ lineno, pos, message ])
+    a = new d16bunny.Assembler(logger)
+    rv = a.compileLines(code)
+    rv.errorCount.should.equal(1)
+    logs[0][0].should.equal(1) # lineno
+    logs[0][1].should.equal(4) # pos
+    infos = rv.compiled
+    infos.length.should.equal(3)
+    infos[0].should.eql(org: 0, data: [ 0x0401 ])
+    infos[1].should.eql(org: 1, data: [ 0x7c20, 0 ])
+    infos[2].should.eql(org: 3, data: [ 0x106b ])
 

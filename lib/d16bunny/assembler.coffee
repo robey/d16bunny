@@ -4,12 +4,12 @@ util = require 'util'
 Dcpu = require('./dcpu').Dcpu
 
 class ParseException
-  constructor: (@text, @pos, message) ->
-    @message = @format(message)
+  constructor: (@text, @pos, @reason) ->
+    @message = @format(@reason)
 
-  format: (message) -> 
+  format: (reason) -> 
     spacer = if @pos == 0 then "" else (" " for i in [1 .. @pos]).join("")
-    "\n" + @text + "\n" + spacer + "^\n" + message + "\n"
+    "\n" + @text + "\n" + spacer + "^\n" + reason + "\n"
 
 # an expression tree.
 class Expression
@@ -116,8 +116,8 @@ class Assembler
   LabelRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*$/
   SymbolRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*/
 
-  # logger will be used to report errors: logger(pos, message, fatal?)
-  # if not fatal, it's just a warning.
+  # logger will be used to report errors: logger(line#, pos, message)
+  # line # is counted from zero.
   constructor: (@logger) ->
     # some state is kept by the parser during parsing of each line:
     @text = ""         # text currently being parsed
@@ -496,7 +496,7 @@ class Assembler
   # computed.
   # returns an object with:
   #   - data: compiled output, made up either of words or unresolved expression trees
-  #   - org: (optional) if the origin was changed
+  #   - org: the memory location (pc) where this data starts
   #   - branchFrom: (optional) if this is a relative-branch instruction
   compileLine: (text, org) ->
     @debug "+ compile line @ ", org, ": ", text
@@ -504,34 +504,38 @@ class Assembler
 
   compileParsedLine: (line, org) ->
     @debug "  parsed line: ", line
+    @symtab["."] = org
     if line.label? then @symtab[line.label] = org
     if line.data? then return { data: line.data }
     if line.expanded?
-      info = { data: [] }
+      info = { data: [], org: org }
       for x in line.expanded
         @debug "  expand macro: ", x
+        if x.op? and x.op == "org"
+          @fail line.pos, "Sorry, you can't use ORG in a macro."
         newinfo = @compileParsedLine(x, org)
         info.data = info.data.concat(newinfo.data)
-        if info.org? then org = info.org else org += newinfo.data.size
+        org += newinfo.data.size
         @debug "  finished macro expansion: ", newinfo
       return info
-    if not line.op? then return { data: [] }
+    if not line.op? then return { data: [], org: org }
 
     if line.op == "org"
       if line.operands.length != 1 then @fail line.pos, "ORG requires a single parameter"
-      if not line.operands[0].resolvable(@symtab)
+      if not line.operands[0].expr.resolvable(@symtab)
         @fail line.operands[0].pos, "ORG must be a constant expression with no forward references"
-      info = { org: line.operands[0].evaluate(@symtab) }
+      info = { org: line.operands[0].expr.evaluate(@symtab), data: [] }
       if line.label? then @symtab[line.label] = info.org
       return info
 
     # convenient aliases
     if line.op == "jmp"
       if line.operands.length != 1 then @fail line.pos, "JMP requires a single parameter"
+      if line.operands[0].code != 0x1f then @fail line.operands[0].loc, "JMP takes only an immediate value"
       line.op = "set"
       @setText("pc")
       line.operands.unshift(@parseOperand(true))
-      return @compileParsedLine(line)
+      return @compileParsedLine(line, org)
     if line.op == "brk"
       if line.operands.length != 0 then @fail line.pos, "BRK has no parameters"
       return @compileLine("sub pc, 1", org)
@@ -539,10 +543,12 @@ class Assembler
       if line.operands.length != 0 then @fail line.pos, "RET has no parameters"
       return @compileLine("set pc, pop", org)
     if line.op == "bra"
+      if line.operands.length != 1 then @fail line.pos, "BRA requires a single parameter"
+      if line.operands[0].code != 0x1f then @fail line.operands[0].loc, "BRA takes only an immediate value"
       # we'll compute the branch on the 2nd pass.
-      return { data: [ 0 ], branchFrom: org + 1 }
+      return { data: [ line.operands[0] ], org: org, branchFrom: org + 1 }
 
-    info = { data: [ 0 ] }
+    info = { data: [ 0 ], org: org }
     for i in [line.operands.length - 1 .. 0]
       x = line.operands[i]
       @resolveOperand(x)
@@ -557,6 +563,61 @@ class Assembler
     else
       @fail line.pos, "Unknown instruction: " + line.op
     info
+
+  # force resolution of any unresolved expressions.
+  resolveLine: (info) ->
+    @symtab["."] = info.org
+    if info.branchFrom
+      # finally resolve (short) relative branch
+      @debug "  resolve bra: ", info
+      dest = info.data[0].expr.evaluate(@symtab)
+      offset = info.branchFrom - dest
+      if offset < -30 or offset > 30
+        @fail info.data[0].pos, "Short branch can only move 30 words away (here: " + Math.abs(offset) + ")"
+      opcode = if offset < 0 then Dcpu.BinaryOp.add else Dcpu.BinaryOp.sub
+      info.data[0] = ((Math.abs(offset) + 0x21) << 10) | (Dcpu.Specials.pc << 5) | opcode
+      delete info.branchFrom
+    @debug "  resolve: ", info
+    for i in [0 .. info.data.length - 1]
+      if typeof info.data[i] == 'object'
+        info.data[i] = info.data[i].evaluate(@symtab)
+    info
+
+  # do a full two-stage compile of this source.
+  # transforms a list of lines into a list of info objects, each with:
+  #   - org: memory address of this line
+  #   - data: words of compiled data (length may be 0, or quite large for expanded macros or data)
+  compileLines: (lines, org = 0) ->
+    infos = []
+    errorCount = 0
+    giveUp = false
+    defaultValue = { org: org, data: [] }
+    process = (lineno, f) =>
+      if giveUp then return defaultValue
+      try
+        f()
+      catch e
+        @logger(lineno, (if e.pos? then e.pos else 0), (if e.reason? then e.reason else e.toString()))
+        errorCount++
+        if errorCount >= 10
+          @logger(lineno, 0, "Too many errors; giving up.")
+          giveUp = true
+        defaultValue
+    # pass 1:
+    for i in [0 .. lines.length - 1]
+      line = lines[i]
+      info = process i, => @compileLine(line, org)
+      infos.push(info)
+      org = info.org + info.data.length
+    # pass 2:
+    for i in [0 .. lines.length - 1]
+      info = infos[i]
+      process i, => @resolveLine(info)
+      # if anything failed, fill it in with zeros.
+      for j in [0 .. info.data.length - 1]
+        if typeof info.data[j] == 'object'
+          info.data[j] = 0
+    { errorCount: errorCount, compiled: infos }
 
 
 exports.Assembler = Assembler
