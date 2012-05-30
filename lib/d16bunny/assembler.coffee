@@ -1,5 +1,5 @@
 
-util = require 'util'
+# todo: print how long the compile took.
 
 Dcpu = require('./dcpu').Dcpu
 
@@ -8,7 +8,7 @@ class ParseException
     @message = @format(@reason)
 
   format: (reason) -> 
-    spacer = if @pos == 0 then "" else (" " for i in [1 .. @pos]).join("")
+    spacer = if @pos == 0 then "" else (" " for i in [0 ... @pos]).join("")
     "\n" + @text + "\n" + spacer + "^\n" + reason + "\n"
 
 # an expression tree.
@@ -119,16 +119,19 @@ class Assembler
   # logger will be used to report errors: logger(line#, pos, message)
   # line # is counted from zero.
   constructor: (@logger) ->
+    @reset()
+
+  reset: ->
     # some state is kept by the parser during parsing of each line:
     @text = ""         # text currently being parsed
     @pos = 0           # current index within text
     @end = 0           # parsing should not continue past end
     @inMacro = false   # waiting for an "}"
-    # when evaluating macros, this holds the current parameters:
+    # when evaluating macros, this holds the current parameter set:
     @vars = {}
     # macros that have been defined:
     @macros = {}
-    # current symbol table:
+    # current symbol table for resolving named references
     @symtab = {}
 
   debug: (list...) ->
@@ -309,6 +312,7 @@ class Assembler
   # attempt to resolve the expression in this operand. returns true on success, and sets:
   #   - immediate: (optional) immediate value for this operand
   resolveOperand: (operand) ->
+    @debug "  resolve operand: ", operand
     if not operand.expr? then return true
     if not operand.expr.resolvable(@symtab) then return false
     value = operand.expr.evaluate(@symtab) & 0xffff
@@ -402,7 +406,7 @@ class Assembler
     @vars = {}
     for k, v of old_vars
       @vars[k] = v
-    for i in [0 .. args.length - 1]
+    for i in [0 ... args.length]
       @vars[macro.params[i]] = args[i]
     @debug "  new vars: ", @vars
     line.expanded = (@parseLine(x) for x in macro.lines)
@@ -415,14 +419,14 @@ class Assembler
     while @pos < @end
       if @text[@pos] == '"'
         s = @parseString()
-        data.push(s.charCodeAt(i)) for i in [0 .. s.length - 1]
+        data.push(s.charCodeAt(i)) for i in [0 ... s.length]
       else if @pos + 1 < @end and @text[@pos] == 'p' and @text[@pos + 1] == '"'
         # packed string
         @pos++
         s = @parseString()
         word = 0
         inWord = false
-        for i in [0 .. s.length - 1]
+        for i in [0 ... s.length]
           ch = s.charCodeAt(i)
           if inWord then data.push(word | ch) else (word = ch << 8)
           inWord = not inWord
@@ -549,11 +553,12 @@ class Assembler
       return { data: [ line.operands[0] ], org: org, branchFrom: org + 1 }
 
     info = { data: [ 0 ], org: org }
-    for i in [line.operands.length - 1 .. 0]
-      x = line.operands[i]
-      @resolveOperand(x)
-      if x.expr? then info.data.push(x.expr)
-      if x.immediate? then info.data.push(x.immediate)
+    if line.operands.length > 0
+      for i in [line.operands.length - 1 .. 0]
+        x = line.operands[i]
+        @resolveOperand(x)
+        if x.expr? then info.data.push(x.expr)
+        if x.immediate? then info.data.push(x.immediate)
     if Dcpu.BinaryOp[line.op]?
       if line.operands.length != 2 then @fail line.pos, line.op.toUpperCase() + " requires 2 parameters"
       info.data[0] = (line.operands[1].code << 10) | (line.operands[0].code << 5) | Dcpu.BinaryOp[line.op]
@@ -578,15 +583,21 @@ class Assembler
       info.data[0] = ((Math.abs(offset) + 0x21) << 10) | (Dcpu.Specials.pc << 5) | opcode
       delete info.branchFrom
     @debug "  resolve: ", info
-    for i in [0 .. info.data.length - 1]
+    for i in [0 ... info.data.length]
       if typeof info.data[i] == 'object'
         info.data[i] = info.data[i].evaluate(@symtab)
     info
 
   # do a full two-stage compile of this source.
-  # transforms a list of lines into a list of info objects, each with:
-  #   - org: memory address of this line
-  #   - data: words of compiled data (length may be 0, or quite large for expanded macros or data)
+  # returns an object with:
+  #   - errorCount: number of errors discovered (reported through @logger)
+  #   - compiled: the list of compiled line objects. each compiled line is:
+  #     - org: memory address of this line
+  #     - data: words of compiled data (length may be 0, or quite large for
+  #       expanded macros or "dat" blocks)
+  # the 'compiled' array will always be the same length as the 'lines' array,
+  # but the 'data' field on some lines may be empty if no code was compiled
+  # for that line, or there were too many errors.
   compileLines: (lines, org = 0) ->
     infos = []
     errorCount = 0
@@ -597,27 +608,58 @@ class Assembler
       try
         f()
       catch e
-        @logger(lineno, (if e.pos? then e.pos else 0), (if e.reason? then e.reason else e.toString()))
+        pos = if e.pos? then e.pos else 0
+        reason = if e.reason? then e.reason else e.toString()
+        @debug "  error on line ", lineno, " at ", pos, ": ", reason
+        @logger(lineno, pos, reason)
         errorCount++
         if errorCount >= 10
+          @debug "  too many errors"
           @logger(lineno, 0, "Too many errors; giving up.")
           giveUp = true
         defaultValue
     # pass 1:
-    for i in [0 .. lines.length - 1]
+    for i in [0 ... lines.length]
       line = lines[i]
       info = process i, => @compileLine(line, org)
       infos.push(info)
       org = info.org + info.data.length
     # pass 2:
-    for i in [0 .. lines.length - 1]
+    for i in [0 ... lines.length]
       info = infos[i]
       process i, => @resolveLine(info)
       # if anything failed, fill it in with zeros.
-      for j in [0 .. info.data.length - 1]
+      for j in [0 ... info.data.length]
         if typeof info.data[j] == 'object'
           info.data[j] = 0
     { errorCount: errorCount, compiled: infos }
+
+  # pack the compiled line data from 'compileLines' into an array of
+  # contiguous memory blocks, suitable for copying into an emulator or
+  # writing out to an object file.
+  packOutput: (compileResult) ->
+    if compileResult.errorCount > 0 or compileResult.compiled.length == 0
+      return {}
+    compiled = compileResult.compiled
+    i = 0
+    end = compiled.length
+    blocks = []
+    while i < end
+      runStart = i
+      orgStart = org = compiled[i].org
+      while i < end and compiled[i].org == org
+        org += compiled[i].data.length
+        i++
+      data = new Array(org - orgStart)
+      n = 0
+      for j in [runStart...i]
+        # apparently js has no array copy :(
+        for k in [0 ... compiled[j].data.length]
+          data[n++] = compiled[j].data[k]
+      blocks.push(org: orgStart, data: data)
+    { blocks: blocks }
+
+
 
 
 exports.Assembler = Assembler

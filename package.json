@@ -12,13 +12,16 @@
     "optparse": "*"
   },
   "devDependencies": {
+    "fibers": "*",
+    "glob": "*",
     "mocha": "*",
     "should": "*",
-    "glob": "*"
+    "sync": "*"
   },
-  "directories": {
-    "lib": "./lib/d16bunny"
-  },
-  "main": "./lib/d16bunny"
+  "main": "./lib/d16bunny",
+  "files": [
+    "Cakefile",
+    "lib",
+    "test"
+  ]
 }
-

@@ -1,5 +1,4 @@
 should = require 'should'
-util = require 'util'
 d16bunny = require '../lib/d16bunny'
 
 logger = (lineno, pos, message) ->
@@ -293,3 +292,26 @@ describe "Assembler.compileLines", ->
     infos[1].should.eql(org: 1, data: [ 0x7c20, 0 ])
     infos[2].should.eql(org: 3, data: [ 0x106b ])
 
+  it "gives up after 10 errors", ->
+    code = ("wut" for i in [1..15])
+    logs = []
+    logger = (lineno, pos, message) -> logs.push([ lineno, pos, message ])
+    a = new d16bunny.Assembler(logger)
+    rv = a.compileLines(code)
+    rv.errorCount.should.equal(10)
+    logs.length.should.equal(11)
+    for i in [0..9] then logs[i][2].should.match(/wut/)
+    logs[10][2].should.match(/giving up/)
+
+describe "Assembler.packOutput", ->
+  it "builds a few blocks", ->
+    code = [
+      "org 0x100", "bor x, y", "bor x, z", "bor x, i", "org 0x300",
+      "bor x, j", "org 0x400", "bor x, a"
+    ]
+    a = new d16bunny.Assembler(logger)
+    rv = a.packOutput(a.compileLines(code))
+    rv.blocks.length.should.equal(3)
+    rv.blocks[0].should.eql(org: 0x100, data: [ 0x106b, 0x146b, 0x186b ])
+    rv.blocks[1].should.eql(org: 0x300, data: [ 0x1c6b ])
+    rv.blocks[2].should.eql(org: 0x400, data: [ 0x006b ])

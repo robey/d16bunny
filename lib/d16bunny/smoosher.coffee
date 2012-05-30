@@ -1,6 +1,4 @@
 
-util = require 'util'
-
 class Smoosher
   # gray, yellow, orange, red, purple, blue, cyan, green
   colors: [ "37", "33;1", "33", "31", "35", "34", "36", "32" ]
@@ -11,7 +9,8 @@ class Smoosher
 
   smoosh: (obj, colorIndex = 0) ->
     switch typeof obj
-      when 'string' then @inColor(util.format("%j", obj), colorIndex)
+      when 'undefined' then @inColor("undefined", colorIndex)
+      when 'string' then @inColor(@smooshString(obj), colorIndex)
       when 'number' then @inColor("0x" + obj.toString(16), colorIndex)
       when 'object'
         if obj instanceof Array
@@ -39,6 +38,18 @@ class Smoosher
         out += @inColor(" " + k + ": ", colorIndex) + @smoosh(v, colorIndex)
         first = false
     out + @inColor(" }", colorIndex)
+
+  smooshString: (s) ->
+    out = ""
+    for i in [0 ... s.length]
+      ch = s.charCodeAt(s[i])
+      if ch < 32 or ch > 127
+        hex = ch.toString(16)
+        while hex.length < 4 then hex = "0" + hex
+        out += "\\u" + hex
+      else
+        out += ch
+    "\"" + out + "\""
 
 smoosher = new Smoosher()
 exports.smoosh = smoosher
