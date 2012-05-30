@@ -200,6 +200,11 @@ describe "Parser.compileLine", ->
     info.should.eql(data: [ 0x88c1 ], org: 0x200)
     a.symtab.start.should.eql(0x200)
 
+  it "compiles a one-operand", ->
+    a = new d16bunny.Assembler(logger)
+    info = a.compileLine("hwi 3", 0x200)
+    info.should.eql(data: [ 0x9240 ], org: 0x200)
+
   it "compiles a special (jsr)", ->
     a = new d16bunny.Assembler(logger)
     a.symtab.cout = 0x999

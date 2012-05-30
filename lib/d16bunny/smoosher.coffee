@@ -48,7 +48,7 @@ class Smoosher
         while hex.length < 4 then hex = "0" + hex
         out += "\\u" + hex
       else
-        out += ch
+        out += s[i]
     "\"" + out + "\""
 
 smoosher = new Smoosher()

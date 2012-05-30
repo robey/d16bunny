@@ -307,16 +307,16 @@ class Assembler
       expr = if expr.left.register? then expr.right else expr.left
       return { loc: loc, code: 0x10 + register, expr: expr }
 
-    { loc: loc, code: (if inPointer then 0x1e else 0x1f), expr: expr, destination: destination }
+    { loc: loc, code: (if inPointer then 0x1e else 0x1f), expr: expr }
 
   # attempt to resolve the expression in this operand. returns true on success, and sets:
   #   - immediate: (optional) immediate value for this operand
-  resolveOperand: (operand) ->
+  resolveOperand: (operand, large = false) ->
     @debug "  resolve operand: ", operand
     if not operand.expr? then return true
     if not operand.expr.resolvable(@symtab) then return false
     value = operand.expr.evaluate(@symtab) & 0xffff
-    if operand.code == 0x1f and (value == 0xffff or value < 31) and not operand.destination
+    if operand.code == 0x1f and (value == 0xffff or value < 31) and large
       operand.code = 0x20 + (if value == 0xffff then 0x00 else (0x01 + value))
     else
       operand.immediate = value
@@ -556,7 +556,7 @@ class Assembler
     if line.operands.length > 0
       for i in [line.operands.length - 1 .. 0]
         x = line.operands[i]
-        @resolveOperand(x)
+        @resolveOperand(x, i == line.operands.length - 1)
         if x.expr? then info.data.push(x.expr)
         if x.immediate? then info.data.push(x.immediate)
     if Dcpu.BinaryOp[line.op]?
@@ -637,6 +637,9 @@ class Assembler
   # pack the compiled line data from 'compileLines' into an array of
   # contiguous memory blocks, suitable for copying into an emulator or
   # writing out to an object file.
+  # each block is:
+  #   - org: starting address of the block
+  #   - data: data within this block
   packOutput: (compileResult) ->
     if compileResult.errorCount > 0 or compileResult.compiled.length == 0
       return {}
