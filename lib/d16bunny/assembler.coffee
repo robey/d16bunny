@@ -4,7 +4,7 @@
 Dcpu = require('./dcpu').Dcpu
 Expression = require('./expression').Expression
 AssemblerError = require('./errors').AssemblerError
-prettyPrinter = require('./smoosher').prettyPrinter
+prettyPrinter = require('./prettyprint').prettyPrinter
 
 # compile lines of DCPU assembly.
 class Assembler
@@ -45,7 +45,6 @@ class Assembler
     @macros = {}
     # current symbol table for resolving named references
     @symtab = {}
-    @debugger = console.log
 
   debug: (list...) ->
     unless @debugger? then return
