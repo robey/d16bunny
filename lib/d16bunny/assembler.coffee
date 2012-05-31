@@ -2,97 +2,8 @@
 # todo: print how long the compile took.
 
 Dcpu = require('./dcpu').Dcpu
-
-class ParseException
-  constructor: (@text, @pos, @reason) ->
-    @message = @format(@reason)
-
-  format: (reason) -> 
-    spacer = if @pos == 0 then "" else (" " for i in [0 ... @pos]).join("")
-    "\n" + @text + "\n" + spacer + "^\n" + reason + "\n"
-
-# an expression tree.
-class Expression
-  Register: (text, pos, r) ->
-    e = new Expression(text, pos)
-    e.register = r
-    e.evaluate = (symtab) ->
-      throw new ParseException(@text, @pos, "Constant expressions may not contain register references")
-    e.toString = -> Dcpu.RegisterNames[@register] if @register
-    e.resolvable = (symtab) -> true
-    e
-
-  Literal: (text, pos, n) ->
-    e = new Expression(text, pos)
-    e.literal = n
-    e.evaluate = (symtab) -> @literal
-    e.toString = -> @literal.toString()
-    e.resolvable = (symtab) -> true
-    e
-
-  Label: (text, pos, x) ->
-    e = new Expression(text, pos)
-    e.label = x
-    e.evaluate = (symtab) ->
-      if Dcpu.Reserved[@label]
-        throw new ParseException(@text, @pos, "You can't use " + @label.toUpperCase() + " in expressions.")
-      if not symtab[@label]
-        throw new ParseException(@text, @pos, "Can't resolve reference to " + @label)
-      symtab[@label]
-    e.toString = -> @label
-    e.resolvable = (symtab) -> symtab[@label]?
-    e
-
-  Unary: (text, pos, op, r) ->
-    e = new Expression(text, pos)
-    e.unary = op
-    e.right = r
-    e.evaluate = (symtab) ->
-      r = @right.evaluate(symtab)
-      switch @unary
-        when '-' then -r
-        else r
-    e.toString = -> "(" + @unary + @right.toString() + ")"
-    e.resolvable = (symtab) -> @right.resolvable(symtab)
-    e
-
-  Binary: (text, pos, op, l, r) ->
-    e = new Expression(text, pos)
-    e.binary = op
-    e.left = l
-    e.right = r
-    e.evaluate = (symtab) ->
-      l = @left.evaluate(symtab)
-      r = @right.evaluate(symtab)
-      switch @binary
-        when '+' then l + r
-        when '-' then l - r
-        when '*' then l * r
-        when '/' then l / r
-        when '%' then l % r
-        when '<<' then l << r
-        when '>>' then l >> r
-        when '&' then l & r
-        when '^' then l ^ r
-        when '|' then l | r
-        else throw new ParseException(@text, @pos, "Internal error (undefined binary operator)")
-    e.toString = -> "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")"
-    e.resolvable = (symtab) -> @left.resolvable(symtab) and @right.resolvable(symtab)
-    e
-
-  constructor: (@text, @pos) ->
-
-  # for debugging.
-  toString: -> throw "must be implemented in objects"
-
-  # Given a symbol table of names and values, resolve this expression tree
-  # into a single number. Any register reference, or reference to a symbol
-  # that isn't defined in 'symtab' will be an error.
-  evaluate: (symtab) -> throw "must be implemented in objects"
-
-  # can this expression's references be resolved by the symtab (yet)?
-  resolvable: (symtab) -> throw "must be implemented in objects"
-
+Expression = require('./expression').Expression
+AssemblerError = require('./errors').AssemblerError
 
 # compile lines of DCPU assembly.
 class Assembler
@@ -149,7 +60,7 @@ class Assembler
     @end = text.length
 
   fail: (loc, message) ->
-    throw new ParseException(@text, loc, message)
+    throw new AssemblerError(@text, loc, message)
 
   skipWhitespace: ->
     c = @text[@pos]
@@ -637,9 +548,10 @@ class Assembler
   # pack the compiled line data from 'compileLines' into an array of
   # contiguous memory blocks, suitable for copying into an emulator or
   # writing out to an object file.
-  # each block is:
-  #   - org: starting address of the block
-  #   - data: data within this block
+  # returns:
+  #   - blocks: array of data blocks. each block is:
+  #     - org: starting address of the block
+  #     - data: data within this block
   packOutput: (compileResult) ->
     if compileResult.errorCount > 0 or compileResult.compiled.length == 0
       return {}
@@ -656,14 +568,12 @@ class Assembler
       data = new Array(org - orgStart)
       n = 0
       for j in [runStart...i]
-        # apparently js has no array copy :(
-        for k in [0 ... compiled[j].data.length]
-          data[n++] = compiled[j].data[k]
+        k = compiled[j].data.length
+        data[n ... n + k] = compiled[j].data
+        n += k
       blocks.push(org: orgStart, data: data)
     { blocks: blocks }
 
 
-
-
 exports.Assembler = Assembler
-exports.ParseException = ParseException
+exports.AssemblerError = AssemblerError

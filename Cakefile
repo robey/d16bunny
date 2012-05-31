@@ -27,3 +27,7 @@ task "build", "build javascript", ->
   sync ->
     run "mkdir -p jsbuild"
     run "coffee -o jsbuild -c lib"
+
+task "clean", "erase build products", ->
+  sync ->
+    run "rm -rf jsbuild"
