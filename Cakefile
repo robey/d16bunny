@@ -15,13 +15,15 @@ exec = (args...) ->
   process.on 'exit', (code) -> fiber.run(code)
   fibers.yield()
 
-run = (command) -> exec("/bin/sh", "-c", command)
+run = (command) ->
+  console.log "\u001b[35m+ " + command + "\u001b[0m"
+  exec("/bin/sh", "-c", command)
 
 task "test", "run unit tests", ->
-  run "./node_modules/mocha/bin/mocha",
-    "-R", "Progress", "--compilers", "coffee:coffee-script", "--colors"
+  sync ->
+    run "./node_modules/mocha/bin/mocha -R Progress --compilers coffee:coffee-script --colors"
 
 task "build", "build javascript", ->
   sync ->
     run "mkdir -p jsbuild"
-    exec "coffee", "-o", "jsbuild", "-c", "lib"
+    run "coffee -o jsbuild -c lib"
