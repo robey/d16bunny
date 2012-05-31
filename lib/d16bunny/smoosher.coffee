@@ -1,5 +1,5 @@
 
-class Smoosher
+class PrettyPrinter
   # gray, yellow, orange, red, purple, blue, cyan, green
   colors: [ "37", "33;1", "33", "31", "35", "34", "36", "32" ]
 
@@ -7,39 +7,39 @@ class Smoosher
     colorIndex %= 8
     "\u001b[" + @colors[colorIndex] + "m" + s + "\u001b[0m"
 
-  smoosh: (obj, colorIndex = 0) ->
+  dump: (obj, colorIndex = 0) ->
     switch typeof obj
       when 'undefined' then @inColor("undefined", colorIndex)
-      when 'string' then @inColor(@smooshString(obj), colorIndex)
+      when 'string' then @inColor(@dumpString(obj), colorIndex)
       when 'number' then @inColor("0x" + obj.toString(16), colorIndex)
       when 'object'
         if obj instanceof Array
-          @smooshArray(obj, colorIndex + 1)
+          @dumpArray(obj, colorIndex + 1)
         else
-          @smooshObject(obj, colorIndex + 1)
+          @dumpObject(obj, colorIndex + 1)
       else @inColor(obj.toString(), colorIndex)
 
-  smooshArray: (obj, colorIndex) ->
+  dumpArray: (obj, colorIndex) ->
     first = true
     out = @inColor("[", colorIndex)
     for x in obj
       if not first then out += @inColor(",", colorIndex)
-      out += @inColor(" ", colorIndex) + @smoosh(x, colorIndex)
+      out += @inColor(" ", colorIndex) + @dump(x, colorIndex)
       first = false
     out += @inColor(" ]", colorIndex)
     return out
 
-  smooshObject: (obj, colorIndex) ->
+  dumpObject: (obj, colorIndex) ->
     first = true
     out = @inColor("{", colorIndex)
     for k, v of obj
       if typeof obj[k] != 'function'
         if not first then out += @inColor(",", colorIndex)
-        out += @inColor(" " + k + ": ", colorIndex) + @smoosh(v, colorIndex)
+        out += @inColor(" " + k + ": ", colorIndex) + @dump(v, colorIndex)
         first = false
     out + @inColor(" }", colorIndex)
 
-  smooshString: (s) ->
+  dumpString: (s) ->
     out = ""
     for i in [0 ... s.length]
       ch = s.charCodeAt(s[i])
@@ -51,5 +51,4 @@ class Smoosher
         out += s[i]
     "\"" + out + "\""
 
-smoosher = new Smoosher()
-exports.smoosh = smoosher
+exports.prettyPrinter = new PrettyPrinter

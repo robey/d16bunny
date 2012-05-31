@@ -4,6 +4,7 @@
 Dcpu = require('./dcpu').Dcpu
 Expression = require('./expression').Expression
 AssemblerError = require('./errors').AssemblerError
+prettyPrinter = require('./smoosher').prettyPrinter
 
 # compile lines of DCPU assembly.
 class Assembler
@@ -44,13 +45,14 @@ class Assembler
     @macros = {}
     # current symbol table for resolving named references
     @symtab = {}
+    @debugger = console.log
 
   debug: (list...) ->
     unless @debugger? then return
     slist = for item in list
       switch typeof item
         when 'string' then item.toString()
-        else require('./smoosher.coffee').smoosh.smoosh(item)
+        else prettyPrinter.dump(item)
     @debugger(slist.join(""))
 
   # useful for unit tests
