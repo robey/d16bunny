@@ -1,5 +1,5 @@
 should = require 'should'
-d16bunny = require '../lib/d16bunny'
+d16bunny = require '../src/d16bunny'
 
 logger = (lineno, pos, message) ->
 
@@ -257,66 +257,65 @@ describe "Assembler.resolveLine", ->
     a.resolveLine(info)
     info.data.should.eql([ 0xa382 ])
 
-describe "Assembler.compileLines", ->
+describe "Assembler.compile", ->
   it "compiles a small program", ->
     code = [ "text = 0x8000", "; comment", "  set [text], 0xf052", "  bor x, y" ];
     a = new d16bunny.Assembler(logger)
-    rv = a.compileLines(code)
+    rv = a.compile(code)
     rv.errorCount.should.equal(0)
-    infos = rv.compiled
+    lines = rv.lines
     a.symtab.text.should.equal(0x8000)
-    infos.length.should.equal(4)
-    infos[0].should.eql(org: 0, data: [])
-    infos[1].should.eql(org: 0, data: [])
-    infos[2].should.eql(org: 0, data: [ 0x7fc1, 0xf052, 0x8000 ])
-    infos[3].should.eql(org: 3, data: [ 0x106b ])
+    lines.length.should.equal(4)
+    lines[0].should.eql(org: 0, data: [])
+    lines[1].should.eql(org: 0, data: [])
+    lines[2].should.eql(org: 0, data: [ 0x7fc1, 0xf052, 0x8000 ])
+    lines[3].should.eql(org: 3, data: [ 0x106b ])
 
   it "compiles a forward reference", ->
     code = [ "org 0x1000", "jmp hello", ":hello bor x, y" ];
     a = new d16bunny.Assembler(logger)
-    rv = a.compileLines(code)
+    rv = a.compile(code)
     rv.errorCount.should.equal(0)
-    infos = rv.compiled
-    infos.length.should.equal(3)
-    infos[0].should.eql(org: 0x1000, data: [])
-    infos[1].should.eql(org: 0x1000, data: [ 0x7f81, 0x1002 ])
-    infos[2].should.eql(org: 0x1002, data: [ 0x106b ])
+    lines = rv.lines
+    lines.length.should.equal(3)
+    lines[0].should.eql(org: 0x1000, data: [])
+    lines[1].should.eql(org: 0x1000, data: [ 0x7f81, 0x1002 ])
+    lines[2].should.eql(org: 0x1002, data: [ 0x106b ])
 
   it "recovers from errors", ->
     code = [ "set a, b", "jsr hello", "bor x, y" ];
     logs = []
     logger = (lineno, pos, message) -> logs.push([ lineno, pos, message ])
     a = new d16bunny.Assembler(logger)
-    rv = a.compileLines(code)
+    rv = a.compile(code)
     rv.errorCount.should.equal(1)
     logs[0][0].should.equal(1) # lineno
     logs[0][1].should.equal(4) # pos
-    infos = rv.compiled
-    infos.length.should.equal(3)
-    infos[0].should.eql(org: 0, data: [ 0x0401 ])
-    infos[1].should.eql(org: 1, data: [ 0x7c20, 0 ])
-    infos[2].should.eql(org: 3, data: [ 0x106b ])
+    lines = rv.lines
+    lines.length.should.equal(3)
+    lines[0].should.eql(org: 0, data: [ 0x0401 ])
+    lines[1].should.eql(org: 1, data: [ 0x7c20, 0 ])
+    lines[2].should.eql(org: 3, data: [ 0x106b ])
 
   it "gives up after 10 errors", ->
     code = ("wut" for i in [1..15])
     logs = []
     logger = (lineno, pos, message) -> logs.push([ lineno, pos, message ])
     a = new d16bunny.Assembler(logger)
-    rv = a.compileLines(code)
+    rv = a.compile(code)
     rv.errorCount.should.equal(10)
     logs.length.should.equal(11)
     for i in [0..9] then logs[i][2].should.match(/wut/)
     logs[10][2].should.match(/giving up/)
 
-describe "Assembler.packOutput", ->
-  it "builds a few blocks", ->
+  it "packs into blocks", ->
     code = [
-      "org 0x100", "bor x, y", "bor x, z", "bor x, i", "org 0x300",
-      "bor x, j", "org 0x400", "bor x, a"
+      "org 0x100", "bor x, y", "bor x, z", "bor x, i", "org 0x400",
+      "bor x, j", "org 0x300", "bor x, a"
     ]
     a = new d16bunny.Assembler(logger)
-    rv = a.packOutput(a.compileLines(code))
-    rv.blocks.length.should.equal(3)
-    rv.blocks[0].should.eql(org: 0x100, data: [ 0x106b, 0x146b, 0x186b ])
-    rv.blocks[1].should.eql(org: 0x300, data: [ 0x1c6b ])
-    rv.blocks[2].should.eql(org: 0x400, data: [ 0x006b ])
+    blocks = a.compile(code).pack()
+    blocks.length.should.equal(3)
+    blocks[0].should.eql(org: 0x100, data: [ 0x106b, 0x146b, 0x186b ])
+    blocks[1].should.eql(org: 0x400, data: [ 0x1c6b ])
+    blocks[2].should.eql(org: 0x300, data: [ 0x006b ])

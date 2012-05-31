@@ -1,9 +1,8 @@
 
-# todo: print how long the compile took.
-
 Dcpu = require('./dcpu').Dcpu
 Expression = require('./expression').Expression
 AssemblerError = require('./errors').AssemblerError
+AssemblerOutput = require('./output').AssemblerOutput
 prettyPrinter = require('./prettyprint').prettyPrinter
 
 # compile lines of DCPU assembly.
@@ -501,16 +500,16 @@ class Assembler
     info
 
   # do a full two-stage compile of this source.
-  # returns an object with:
+  # returns an AssemblerOutput object with:
   #   - errorCount: number of errors discovered (reported through @logger)
-  #   - compiled: the list of compiled line objects. each compiled line is:
+  #   - lines: the list of compiled line objects. each compiled line is:
   #     - org: memory address of this line
   #     - data: words of compiled data (length may be 0, or quite large for
   #       expanded macros or "dat" blocks)
-  # the 'compiled' array will always be the same length as the 'lines' array,
-  # but the 'data' field on some lines may be empty if no code was compiled
-  # for that line, or there were too many errors.
-  compileLines: (lines, org = 0) ->
+  # the 'lines' output array will always be the same length as the 'lines'
+  # input array, but the 'data' field on some lines may be empty if no code
+  # was compiled for that line, or there were too many errors.
+  compile: (lines, org = 0) ->
     infos = []
     errorCount = 0
     giveUp = false
@@ -544,37 +543,7 @@ class Assembler
       for j in [0 ... info.data.length]
         if typeof info.data[j] == 'object'
           info.data[j] = 0
-    { errorCount: errorCount, compiled: infos }
-
-  # pack the compiled line data from 'compileLines' into an array of
-  # contiguous memory blocks, suitable for copying into an emulator or
-  # writing out to an object file.
-  # returns:
-  #   - blocks: array of data blocks. each block is:
-  #     - org: starting address of the block
-  #     - data: data within this block
-  packOutput: (compileResult) ->
-    if compileResult.errorCount > 0 or compileResult.compiled.length == 0
-      return {}
-    compiled = compileResult.compiled
-    i = 0
-    end = compiled.length
-    blocks = []
-    while i < end
-      runStart = i
-      orgStart = org = compiled[i].org
-      while i < end and compiled[i].org == org
-        org += compiled[i].data.length
-        i++
-      data = new Array(org - orgStart)
-      n = 0
-      for j in [runStart...i]
-        k = compiled[j].data.length
-        data[n ... n + k] = compiled[j].data
-        n += k
-      blocks.push(org: orgStart, data: data)
-    { blocks: blocks }
-
+    new AssemblerOutput(errorCount, infos)
 
 exports.Assembler = Assembler
 exports.AssemblerError = AssemblerError

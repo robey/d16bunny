@@ -19,15 +19,17 @@ run = (command) ->
   console.log "\u001b[35m+ " + command + "\u001b[0m"
   exec("/bin/sh", "-c", command)
 
+## -----
+
 task "test", "run unit tests", ->
   sync ->
     run "./node_modules/mocha/bin/mocha -R Progress --compilers coffee:coffee-script --colors"
 
 task "build", "build javascript", ->
   sync ->
-    run "mkdir -p jsbuild"
-    run "coffee -o jsbuild -c lib"
+    run "mkdir -p lib"
+    run "coffee -o lib -c src"
 
 task "clean", "erase build products", ->
   sync ->
-    run "rm -rf jsbuild"
+    run "rm -rf lib"
