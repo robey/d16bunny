@@ -345,10 +345,10 @@ describe "Assembler.compile", ->
     out.memToLine(0x100).should.equal(1)
     out.memToLine(0x101).should.equal(2)
     out.memToLine(0x103).should.equal(2)
-    out.memToLine(0x104).should.equal(null)
+    out.memToLine(0x104)?.should.equal(false)
     out.memToLine(0x200).should.equal(5)
     out.memToLine(0x202).should.equal(5)
     out.memToLine(0x204).should.equal(5)
-    out.memToLine(0x205).should.equal(null)
+    out.memToLine(0x205)?.should.equal(false)
     out.memToLine(0x208).should.equal(8)
 
