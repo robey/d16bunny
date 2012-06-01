@@ -4,8 +4,10 @@ class AssemblerOutput
   #   - org: memory address of this line
   #   - data: words of compiled data (length may be 0, or quite large for
   #     expanded macros or "dat" blocks)
-  #   - symtab: map of named variables/labels
+  # symtab: map of named variables/labels
   constructor: (@errorCount, @lines, @symtab) ->
+    @lineMap = (line for line in @lines when line.data.length > 0)
+    @lineMap.sort((a, b) -> if a.org > b.org then 1 else -1)
 
   # pack the compiled line data into an array of contiguous memory blocks,
   # suitable for copying into an emulator or writing out to an object file.
@@ -35,5 +37,10 @@ class AssemblerOutput
     blocks.sort((a, b) -> a.org > b.org)
     @cachedPack = blocks
     blocks
+
+  # return the line # of an address in the compiled code. if it's not an
+  # address in this compilation, return null.
+  memToLine: (address) ->
+    console.log require("util").inspect(@lineMap)
 
 exports.AssemblerOutput = AssemblerOutput

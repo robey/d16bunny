@@ -61,10 +61,14 @@ help = ->
   banner()
   console.log "usage: d16basm [options] <filenames...>"
   console.log "options:"
-  console.log "    --quiet, -q"
+  console.log "    --quiet (-q)"
   console.log "        don't write anything to stdout unless there's an error"
-  console.log "    --debug, -D"
+  console.log "    --debug (-D)"
   console.log "        write *intensive* debugging output about the assembler to stdout"
+  console.log "    --max-errors N"
+  console.log "        stop trying to compile after N errors"
+  console.log "    --org ADDR"
+  console.log "        start compiling into ADDR instead of starting at 0"
   console.log "    --dat"
   console.log "        create generic DCPU assembly made out of DAT statements (useful for"
   console.log "        copying into less intelligent assemblers/emulators)"
@@ -77,6 +81,12 @@ padleft = (s, n, ch = ' ') ->
   s
 
 hex = (n) -> "0x" + padleft(n.toString(16), 4, '0')
+
+parseIntArg = (s) ->
+  if s.slice(0, 2) == "0x"
+    parseInt(s.slice(2), 16)
+  else
+    parseInt(s)
 
 streamToString = (stream) ->
   out = ""
@@ -111,7 +121,7 @@ logPosition = (text, pos) ->
   console.error(spacer + red("^"))
 
 exit = (code) ->
-  console.log ""
+  unless options.quiet? and code == 0 then console.log ""
   process.exit(code)
 
 readFile = (filename) ->
@@ -132,7 +142,7 @@ assemble = (filename) ->
     logPosition(lines[lineno], pos)
   asm = new Assembler(logger)
   if options.debug? then asm.debugger = console.log
-  asm.compile(lines)
+  asm.compile(lines, org, maxErrors)
 
 outputDat = (output) ->
   out = []
@@ -167,6 +177,8 @@ possibleOptions =
   "debug": Boolean
   "quiet": Boolean
   "symtab": Boolean
+  "max-errors": Number
+  "org": String
 shortHands =
   "D": "--debug"
   "q": "--quiet"
@@ -176,6 +188,9 @@ if options.help? then help()
 
 if filenames.length == 0 then filenames = [ "-" ]
 unless options.quiet? then banner()
+
+maxErrors = if options["max-errors"]? then options["max-errors"] else 10
+org = if options.org? then parseIntArg(options.org) else 0
 
 # FIXME what is the standard extension for these things?
 if options.dat?
@@ -190,10 +205,12 @@ sync ->
     unless options.quiet? then console.log "Assembling #{filename}"
     out = assemble(filename)
     if out.errorCount > 0
+      console.error(red("Errors: #{out.errorCount}"))
       success = false
     else
-      for block in out.pack()
-        console.log "  #{hex(block.org)} - #{hex(block.org + block.data.length - 1)}"
+      unless options.quiet?
+        for block in out.pack()
+          console.log "  #{hex(block.org)} - #{hex(block.org + block.data.length - 1)}"
       if options.symtab? then symtab(out)
       newFilename = rootFilename(filename) + extension
       unless options.quiet? then console.log "Writing #{newFilename}"

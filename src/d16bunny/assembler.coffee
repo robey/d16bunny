@@ -512,7 +512,10 @@ class Assembler
   # the 'lines' output array will always be the same length as the 'lines'
   # input array, but the 'data' field on some lines may be empty if no code
   # was compiled for that line, or there were too many errors.
-  compile: (lines, org = 0) ->
+  #
+  # the compiler will try to continue if there are errors, to greedily find
+  # as many of the errors as it can. after 'maxErrors', it will stop.
+  compile: (lines, org = 0, maxErrors = 10) ->
     infos = []
     errorCount = 0
     giveUp = false
@@ -527,7 +530,7 @@ class Assembler
         @debug "  error on line ", lineno, " at ", pos, ": ", reason
         @logger(lineno, pos, reason)
         errorCount++
-        if errorCount >= 20
+        if errorCount >= maxErrors
           @debug "  too many errors"
           @logger(lineno, 0, "Too many errors; giving up.")
           giveUp = true

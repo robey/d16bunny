@@ -217,10 +217,10 @@ describe "Parser.compileLine", ->
     info = a.compileLine("jmp cout", 0x200)
     info.should.eql(data: [ 0x7f81, 0x999 ], org: 0x200)
 
-  it "refuses a non-immediate jmp", ->
+  it "refuses a non-immediate branch", ->
     a = new d16bunny.Assembler(logger)
     a.symtab.cout = 0x999
-    (-> a.compileLine("jmp [cout]", 0x200)).should.throw(/JMP/)
+    (-> a.compileLine("bra [cout]", 0x200)).should.throw(/BRA/)
 
   it "compiles a forward reference", ->
     a = new d16bunny.Assembler(logger)
@@ -316,7 +316,7 @@ describe "Assembler.compile", ->
     logs = []
     logger = (lineno, pos, message) -> logs.push([ lineno, pos, message ])
     a = new d16bunny.Assembler(logger)
-    rv = a.compile(code)
+    rv = a.compile(code, maxErrors = 10)
     rv.errorCount.should.equal(10)
     logs.length.should.equal(11)
     for i in [0..9] then logs[i][2].should.match(/wut/)
@@ -333,3 +333,22 @@ describe "Assembler.compile", ->
     blocks[0].should.eql(org: 0x100, data: [ 0x106b, 0x146b, 0x186b ])
     blocks[1].should.eql(org: 0x300, data: [ 0x006b ])
     blocks[2].should.eql(org: 0x400, data: [ 0x1c6b ])
+
+  it "can find line numbers from code", ->
+    code = [
+      "org 0x100", "bor x, y", "set [0x1000], [0x1001]",
+      "org 0x200", "; comment", "dat 0, 0, 0, 0, 0", "; comment",
+      "org 0x208", "bor x, y"
+    ]
+    a = new d16bunny.Assembler(logger)
+    out = a.compile(code)
+    out.memToLine(0x100).should.equal(1)
+    out.memToLine(0x101).should.equal(2)
+    out.memToLine(0x103).should.equal(2)
+    out.memToLine(0x104).should.equal(null)
+    out.memToLine(0x200).should.equal(5)
+    out.memToLine(0x202).should.equal(5)
+    out.memToLine(0x204).should.equal(5)
+    out.memToLine(0x205).should.equal(null)
+    out.memToLine(0x208).should.equal(8)
+

@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "coffee-script": "*",
-    "optparse": "*"
+    "nopt": "*"
   },
   "devDependencies": {
     "fibers": "*",
