@@ -352,3 +352,20 @@ describe "Assembler.compile", ->
     out.memToLine(0x205)?.should.equal(false)
     out.memToLine(0x208).should.equal(8)
 
+  it "can find code from line numbers", ->
+    code = [
+      "org 0x100", "bor x, y", "set [0x1000], [0x1001]",
+      "org 0x200", "; comment", "dat 0, 0, 0, 0, 0", "; comment",
+      "org 0x208", "bor x, y"
+    ]
+    a = new d16bunny.Assembler(logger)
+    out = a.compile(code)
+    out.lineToMem(0)?.should.equal(false)
+    out.lineToMem(1).should.equal(0x100)
+    out.lineToMem(2).should.equal(0x101)
+    out.lineToMem(3)?.should.equal(false)
+    out.lineToMem(4)?.should.equal(false)
+    out.lineToMem(5).should.equal(0x200)
+    out.lineToMem(6)?.should.equal(false)
+    out.lineToMem(7)?.should.equal(false)
+    out.lineToMem(8).should.equal(0x208)

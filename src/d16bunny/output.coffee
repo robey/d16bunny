@@ -55,4 +55,11 @@ class AssemblerOutput
       if line.org <= address < line.end then return line.lineno
       if address < line.org then hi = n else lo = n + 1
 
+  # return the memory address containing code compiled from a given line.
+  # if the line has no code on it, return null.
+  lineToMem: (lineno) ->
+    if lineno < 0 or lineno >= @lines.length then return null
+    if @lines[lineno].data.length == 0 then return null
+    @lines[lineno].org
+
 exports.AssemblerOutput = AssemblerOutput
