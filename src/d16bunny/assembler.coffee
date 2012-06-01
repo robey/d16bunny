@@ -186,6 +186,7 @@ class Assembler
   # if 'destination' is set, then the operand is in the destination slot (which determines whether
   #   it uses "push" or "pop").
   parseOperand: (destination) ->
+    @debug "  parse operand: dest=", destination, " pos=", @pos
     loc = @pos
     inPointer = false
     inPick = false
@@ -198,6 +199,7 @@ class Assembler
       inPick = true
 
     expr = @parseExpression(0)
+    @debug "  parse operand: expr=", expr
     if inPointer
       if @pos == @end or @text[@pos] != ']' then @fail loc, "Expected ]"
       @pos++
@@ -401,6 +403,7 @@ class Assembler
     line.operands = []
     while @pos < @end
       line.operands.push(@parseOperand(line.operands.length == 0))
+      @skipWhitespace()
       if @pos < @end and @text[@pos] == ','
         @pos++
         @skipWhitespace()
@@ -421,7 +424,7 @@ class Assembler
     @debug "  parsed line: ", line
     @symtab["."] = org
     if line.label? then @symtab[line.label] = org
-    if line.data? then return { data: line.data }
+    if line.data? then return { data: line.data, org: org }
     if line.expanded?
       info = { data: [], org: org }
       for x in line.expanded

@@ -11,7 +11,9 @@ class AssemblerOutput
   # returns an array of data blocks. each block is:
   #   - org: starting address of the block
   #   - data: data within this block
+  # the blocks are sorted in org order.
   pack: ->
+    if @cachedPack? then return @cachedPack
     if @errorCount > 0 or @lines.length == 0 then return []
     i = 0
     end = @lines.length
@@ -29,6 +31,8 @@ class AssemblerOutput
         data[n ... n + k] = @lines[j].data
         n += k
       blocks.push(org: orgStart, data: data)
+    blocks.sort((a, b) -> a.org > b.org)
+    @cachedPack = blocks
     blocks
 
 exports.AssemblerOutput = AssemblerOutput

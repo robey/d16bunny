@@ -248,6 +248,12 @@ describe "Parser.compileLine", ->
     info = a.compileLine("swap y, z", 0x200)
     info.data.should.eql([ 0x1301, 0x1481, 0x60a1 ], org: 0x200)
 
+  it "is okay with indirect immediates", ->
+    a = new d16bunny.Assembler(logger)
+    a.debugger = console.log
+    info = a.compileLine("SUB A, [0x1000]            ; 7803 1000", 0x200)
+    info.data.should.eql([ 0x7803, 0x1000 ])
+
 describe "Assembler.resolveLine", ->
   it "resolves a short relative branch", ->
     a = new d16bunny.Assembler(logger)
@@ -317,5 +323,5 @@ describe "Assembler.compile", ->
     blocks = a.compile(code).pack()
     blocks.length.should.equal(3)
     blocks[0].should.eql(org: 0x100, data: [ 0x106b, 0x146b, 0x186b ])
-    blocks[1].should.eql(org: 0x400, data: [ 0x1c6b ])
-    blocks[2].should.eql(org: 0x300, data: [ 0x006b ])
+    blocks[1].should.eql(org: 0x300, data: [ 0x006b ])
+    blocks[2].should.eql(org: 0x400, data: [ 0x1c6b ])
