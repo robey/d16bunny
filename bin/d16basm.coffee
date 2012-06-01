@@ -158,6 +158,15 @@ outputDat = (output) ->
     out.push ""
   out.join("\n")
 
+outputImage = (output) ->
+  # standard in the DCPU world is little-endian. not sure why. :)
+  memory = output.createImage()
+  buffer = new Buffer(0x20000)
+  for i in [0...0x10000]
+    buffer[i * 2] = memory[i] & 0xff
+    buffer[i * 2 + 1] = (memory[i] >> 8) & 0xff
+  buffer
+
 symtab = (output) ->
   console.log ""
   list = ([ k, v ] for k, v of output.symtab)
@@ -217,7 +226,7 @@ sync ->
       if options.dat?
         fs.writeFileSync(newFilename, outputDat(out), "UTF-8")
       else
-        fs.writeFileSync(newFilename, "") # FIXME
+        fs.writeFileSync(newFilename, outputImage(out))
   tend = new Date().getTime()
   unless options.quiet? then console.log "Finished in #{tend - tstart} msec."
   exit(if success then 0 else 1)

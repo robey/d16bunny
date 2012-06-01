@@ -62,4 +62,18 @@ class AssemblerOutput
     if @lines[lineno].data.length == 0 then return null
     @lines[lineno].org
 
+  # put the compiled data into a 128KB memory image.
+  # if 'memory' is passed in, it must be an array of at least 64K entries.
+  # memory that isn't used by the compiled code will be left alone, so you
+  # should zero it out before calling this function if you want that.
+  # if 'memory' isn't passed in, an array of size 64K will be allocated and
+  # pre-filled with zeros.
+  createImage: (memory = null) ->
+    if not memory?
+      memory = new Array(0x10000)
+      for j in [0...0x10000] then memory[j] = 0
+    for block in @pack()
+      memory[block.org ... (block.org + block.data.length)] = block.data
+    memory
+
 exports.AssemblerOutput = AssemblerOutput
