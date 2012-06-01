@@ -201,7 +201,7 @@ class Assembler
     expr = @parseExpression(0)
     @debug "  parse operand: expr=", expr
     if inPointer
-      if @pos == @end or @text[@pos] != ']' then @fail loc, "Expected ]"
+      if @pos == @end or @text[@pos] != ']' then @fail @pos, "Expected ]"
       @pos++
     if inPick
       return { loc: loc, code: 0x1a, expr: expr }
@@ -347,6 +347,7 @@ class Assembler
       else
         expr = @parseExpression(0)
         data.push(if expr.resolvable(@symtab) then expr.evaluate(@symtab) else expr)
+      @skipWhitespace()
       if @pos < @end and @text[@pos] == ','
         @pos++
         @skipWhitespace()
@@ -417,7 +418,7 @@ class Assembler
   #   - org: the memory location (pc) where this data starts
   #   - branchFrom: (optional) if this is a relative-branch instruction
   compileLine: (text, org) ->
-    @debug "+ compile line @ ", org, ": ", text
+    @debug "+ compile line @ ", org, ": ", text, " -- symtab: ", @symtab
     @compileParsedLine(@parseLine(text), org)
 
   compileParsedLine: (line, org) ->
@@ -449,7 +450,6 @@ class Assembler
     # convenient aliases
     if line.op == "jmp"
       if line.operands.length != 1 then @fail line.pos, "JMP requires a single parameter"
-      if line.operands[0].code != 0x1f then @fail line.operands[0].loc, "JMP takes only an immediate value"
       line.op = "set"
       @setText("pc")
       line.operands.unshift(@parseOperand(true))
@@ -527,7 +527,7 @@ class Assembler
         @debug "  error on line ", lineno, " at ", pos, ": ", reason
         @logger(lineno, pos, reason)
         errorCount++
-        if errorCount >= 10
+        if errorCount >= 20
           @debug "  too many errors"
           @logger(lineno, 0, "Too many errors; giving up.")
           giveUp = true
@@ -546,7 +546,7 @@ class Assembler
       for j in [0 ... info.data.length]
         if typeof info.data[j] == 'object'
           info.data[j] = 0
-    new AssemblerOutput(errorCount, infos)
+    new AssemblerOutput(errorCount, infos, @symtab)
 
 exports.Assembler = Assembler
 exports.AssemblerError = AssemblerError

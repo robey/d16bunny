@@ -4,7 +4,8 @@ class AssemblerOutput
   #   - org: memory address of this line
   #   - data: words of compiled data (length may be 0, or quite large for
   #     expanded macros or "dat" blocks)
-  constructor: (@errorCount, @lines) ->
+  #   - symtab: map of named variables/labels
+  constructor: (@errorCount, @lines, @symtab) ->
 
   # pack the compiled line data into an array of contiguous memory blocks,
   # suitable for copying into an emulator or writing out to an object file.

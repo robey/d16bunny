@@ -248,11 +248,19 @@ describe "Parser.compileLine", ->
     info = a.compileLine("swap y, z", 0x200)
     info.data.should.eql([ 0x1301, 0x1481, 0x60a1 ], org: 0x200)
 
-  it "is okay with indirect immediates", ->
+  it "handles trailing comments", ->
     a = new d16bunny.Assembler(logger)
-    a.debugger = console.log
     info = a.compileLine("SUB A, [0x1000]            ; 7803 1000", 0x200)
     info.data.should.eql([ 0x7803, 0x1000 ])
+
+  it "handles a single data object", ->
+    a = new d16bunny.Assembler(logger)
+    info = a.compileLine(":data DAT \"hello\"   ; hello", 0x200)
+    info.data.should.eql([ 0x0068, 0x0065, 0x006c, 0x006c, 0x006f ])
+
+  it "disallows a constant that's too large", ->
+    a = new d16bunny.Assembler(logger)
+    (-> a.compileLine("set a, 70000", 0x200)).should.throw(/70000/)
 
 describe "Assembler.resolveLine", ->
   it "resolves a short relative branch", ->

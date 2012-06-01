@@ -14,6 +14,8 @@ class Expression
     e
 
   Literal: (text, pos, n) ->
+    if n > 0xffff or n < -0x8000
+      throw new AssemblerError(text, pos, "16-bit value is out of range: #{n}")
     e = new Expression(text, pos)
     e.literal = n
     e.evaluate = (symtab) -> @literal
@@ -27,7 +29,7 @@ class Expression
     e.evaluate = (symtab) ->
       if Dcpu.Reserved[@label]
         throw new AssemblerError(@text, @pos, "You can't use " + @label.toUpperCase() + " in expressions.")
-      if not symtab[@label]
+      if not symtab[@label]?
         throw new AssemblerError(@text, @pos, "Can't resolve reference to " + @label)
       symtab[@label]
     e.toString = -> @label
