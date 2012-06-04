@@ -1,7 +1,7 @@
-dcpu = require './d16bunny/dcpu.coffee'
-assembler = require './d16bunny/assembler.coffee'
 
+dcpu = require './d16bunny/dcpu'
 exports.Dcpu = dcpu.Dcpu
 
+assembler = require './d16bunny/assembler'
 exports.Assembler = assembler.Assembler
-exports.ParseException = assembler.ParseException
+

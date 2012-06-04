@@ -19,6 +19,15 @@ run = (command) ->
   console.log "\u001b[35m+ " + command + "\u001b[0m"
   exec("/bin/sh", "-c", command)
 
+assemblerFiles = [
+  "assembler",
+  "dcpu",
+  "errors",
+  "expression",
+  "output",
+  "prettyprint"
+]
+
 ## -----
 
 task "test", "run unit tests", ->
@@ -33,3 +42,15 @@ task "build", "build javascript", ->
 task "clean", "erase build products", ->
   sync ->
     run "rm -rf lib"
+
+task "web", "build assember into javascript for browsers", ->
+  sync ->
+    run "mkdir -p js"
+    files = ("src/d16bunny/" + x + ".coffee" for x in assemblerFiles)
+    run "coffee -o js -j d16asm-x -c " + files.join(" ")
+    run 'echo "var exports = {};" > js/d16asm.js'
+    # remove the "require" statements.
+    run 'grep -v " = require" js/d16asm-x.js >> js/d16asm.js'
+    run 'echo "var d16bunny = exports; delete exports;" >> js/d16asm.js'
+    #run "rm -f js/d16asm-x.js"
+
