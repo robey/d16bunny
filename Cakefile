@@ -1,6 +1,7 @@
 
 child_process = require 'child_process'
 fibers = require 'fibers'
+fs = require 'fs'
 glob = require 'glob'
 mocha = require 'mocha'
 sync = require 'sync'
@@ -17,7 +18,17 @@ exec = (args...) ->
 
 run = (command) ->
   console.log "\u001b[35m+ " + command + "\u001b[0m"
-  exec("/bin/sh", "-c", command)
+  rv = exec("/bin/sh", "-c", command)
+  if rv != 0
+    console.error "\u001b[31m! Execution failed. :(\u001b[0m"
+    process.exit(1)
+
+checkfile = (file1, file2) ->
+  data1 = fs.readFileSync(file1, "UTF-8")
+  data2 = fs.readFileSync(file2, "UTF-8")
+  if data1 != data2
+    console.error "\u001b[31m! Files do not match: #{file1} <-> #{file2}\u001b[0m"
+    process.exit(1)
 
 # run a task inside a sync-capable fiber
 synctask = (name, description, f) ->
@@ -36,6 +47,12 @@ assemblerFiles = [
 
 synctask "test", "run unit tests", ->
   run "./node_modules/mocha/bin/mocha -R Progress --compilers coffee:coffee-script --colors"
+  console.log "Integration test for d16basm:"
+  for i in [1..4]
+    run "./bin/d16basm -q --dat --out /tmp/d16.out testdata/test#{i}.dasm"
+    checkfile "/tmp/d16.out", "testdata/test#{i}.d16dat"
+    run "rm -f /tmp/d16.out"
+  console.log "\u001b[32mOK! :)\u001b[0m"
 
 synctask "build", "build javascript", ->
   run "mkdir -p lib"
