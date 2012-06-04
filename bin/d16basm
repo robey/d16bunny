@@ -33,16 +33,19 @@ zip = (lists...) ->
   for i in [0...len] then out.push(x[i] for x in lists)
   out
 
-rootFilename = (path) ->
+# return [ folder, filename, ext ]
+parseFilename = (path) ->
   segments = path.split("/")
   filename = segments[segments.length - 1]
   n = filename.lastIndexOf('.')
   basename = if n > 0 then filename.slice(0, n) else filename
+  ext = if n > 0 then filename.slice(n + 1) else ""
   if basename == "-" then basename = "out"
-  if segments.length > 1
-    segments.slice(0, segments.length - 1).concat([ basename ]).join("/")
+  folder = if segments.length > 1
+    segments.slice(0, segments.length - 1).join("/")
   else
-    basename
+    "."
+  [ folder, basename, ext ]
 
 banner = ->
   console.log ""
@@ -65,6 +68,10 @@ help = ->
   console.log "        don't write anything to stdout unless there's an error"
   console.log "    --debug (-D)"
   console.log "        write *intensive* debugging output about the assembler to stdout"
+  console.log "    --dest FOLDER"
+  console.log "        write output files into a specific folder"
+  console.log "    --out FILENAME"
+  console.log "        write output file into a specific (single) file"
   console.log "    --max-errors N"
   console.log "        stop trying to compile after N errors"
   console.log "    --org ADDR"
@@ -188,6 +195,8 @@ possibleOptions =
   "symtab": Boolean
   "max-errors": Number
   "org": String
+  "dest": String
+  "out": String
 shortHands =
   "D": "--debug"
   "q": "--quiet"
@@ -221,7 +230,13 @@ sync ->
         for block in out.pack()
           console.log "  #{hex(block.org)} - #{hex(block.org + block.data.length - 1)}"
       if options.symtab? then symtab(out)
-      newFilename = rootFilename(filename) + extension
+      [ folder, basename, oldext ] = parseFilename(filename)
+      newFilename = if options.out?
+        options.out
+      else if options.dest?
+        options.dest + "/" + basename + extension
+      else
+        folder + "/" + extension
       unless options.quiet? then console.log "Writing #{newFilename}"
       if options.dat?
         fs.writeFileSync(newFilename, outputDat(out), "UTF-8")
