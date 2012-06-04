@@ -1,5 +1,5 @@
 
-Dcpu = require('./dcpu').Dcpu
+Dcpu = require("./dcpu").Dcpu
 Expression = require('./expression').Expression
 AssemblerError = require('./errors').AssemblerError
 AssemblerOutput = require('./output').AssemblerOutput
@@ -141,6 +141,8 @@ class Assembler
         Expression::Register(@text, loc, Dcpu.Registers[operand])
       else if Assembler::LabelRegex.exec(operand)?
         Expression::Label(@text, loc, operand)
+      else
+        @fail loc, "Expected operand"
 
   parseUnary: ->
     if @pos < @end and (@text[@pos] == "-" or @text[@pos] == "+")
@@ -525,6 +527,7 @@ class Assembler
       try
         f()
       catch e
+        if e.type != "AssemblerError" then throw e
         pos = if e.pos? then e.pos else 0
         reason = if e.reason? then e.reason else e.toString()
         @debug "  error on line ", lineno, " at ", pos, ": ", reason
