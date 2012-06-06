@@ -42,7 +42,7 @@ class PrettyPrinter
   dumpString: (s) ->
     out = ""
     for i in [0 ... s.length]
-      ch = s.charCodeAt(s[i])
+      ch = s.charCodeAt(i)
       if ch < 32 or ch > 127
         hex = ch.toString(16)
         while hex.length < 4 then hex = "0" + hex
