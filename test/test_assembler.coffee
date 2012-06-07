@@ -262,6 +262,15 @@ describe "Parser.compileLine", ->
     a = new d16bunny.Assembler(logger)
     (-> a.compileLine("set a, 70000", 0x200)).should.throw(/70000/)
 
+  it "disallows an unknown opcode", ->
+    a = new d16bunny.Assembler(logger)
+    (-> a.compileLine("qxq 9", 0x200)).should.throw(/qxq/)
+
+  it "compiles a definition with EQU", ->
+    a = new d16bunny.Assembler(logger)
+    x = a.compileLine(":happy equ 23", 0)
+    a.symtab.should.eql(happy: 23, ".": 0)
+
 describe "Assembler.resolveLine", ->
   it "resolves a short relative branch", ->
     a = new d16bunny.Assembler(logger)

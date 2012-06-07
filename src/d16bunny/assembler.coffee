@@ -448,6 +448,13 @@ class Assembler
       info = { org: line.operands[0].expr.evaluate(@symtab), data: [] }
       if line.label? then @symtab[line.label] = info.org
       return info
+    if line.op == "equ"
+      if line.operands.length != 1 then @fail line.pos, "EQU requires a single parameter"
+      if not line.operands[0].expr.resolvable(@symtab)
+        @fail line.operands[0].pos, "EQU must be a constant expression with no forward references"
+      if not line.label? then @fail line.pos, "EQU requires a label"
+      @symtab[line.label] = line.operands[0].expr.evaluate(@symtab)
+      return { org: org, data: [] }
 
     # convenient aliases
     if line.op == "jmp"
