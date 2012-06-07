@@ -62,7 +62,7 @@ the basic notch syntax is supported:
 - labels are always at the beginning of a line and are prefixed by ":".
   labels may contain letters, digits, "_", and ".".
 - constant (immediate) values can be decimal integers, hex integers if
-  prefixed by "0x", or label names.
+  prefixed by "0x", binary integers if prefixed by "0b", or label names.
 
 these common extensions are also supported:
 
@@ -103,3 +103,13 @@ inside character and string data, the following escapes are supported:
     \t    tab (0x0009)
     \z    null (0x0000)
     \xNN  any single half-word (0x0000 - 0x00ff)
+
+thanks
+------
+
+- denis olshin (denull) wrote the original javascript assembler that i ran
+  through a blender and then rewrote a few times in an OCD craze -- i
+  basically learned javascript by reading his code.
+- maximinus-thrax wrote the assembler validity checks that i turned ino
+  integration tests because they revealed a lot of bugs.
+

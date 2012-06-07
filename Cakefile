@@ -47,7 +47,7 @@ assemblerFiles = [
 
 synctask "test", "run unit tests", ->
   run "./node_modules/mocha/bin/mocha -R Progress --compilers coffee:coffee-script --colors"
-  console.log "Integration test for d16basm:"
+  console.log "Integration test for d16basm (from maximinus-thrax):"
   for i in [1..4]
     run "./bin/d16basm -q --dat --out /tmp/d16.out testdata/test#{i}.dasm"
     checkfile "/tmp/d16.out", "testdata/test#{i}.d16dat"
