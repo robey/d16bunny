@@ -20,11 +20,11 @@ class Assembler
     '^' : 6
     '|' : 5
 
-  OperandRegex: /^[A-Za-z_.0-9]+/
+  OperandRegex: /^[A-Za-z_.0-9]+|\$/
   NumberRegex: /^[0-9]+$/
   HexRegex: /^0x[0-9a-fA-F]+$/
   BinaryRegex: /^0b[01]+$/
-  LabelRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*$/
+  LabelRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*|\$$/
   SymbolRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*/
 
   # logger will be used to report errors: logger(line#, pos, message)
@@ -423,12 +423,13 @@ class Assembler
   #   - org: the memory location (pc) where this data starts
   #   - branchFrom: (optional) if this is a relative-branch instruction
   compileLine: (text, org) ->
+    @symtab["."] = org
+    @symtab["$"] = org
     @debug "+ compile line @ ", org, ": ", text, " -- symtab: ", @symtab
     @compileParsedLine(@parseLine(text), org)
 
   compileParsedLine: (line, org) ->
     @debug "  parsed line: ", line
-    @symtab["."] = org
     if line.label? then @symtab[line.label] = org
     if line.data? then return { data: line.data, org: org }
     if line.expanded?
