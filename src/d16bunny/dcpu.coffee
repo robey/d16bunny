@@ -54,6 +54,6 @@ Dcpu =
 Dcpu.Reserved = (x for x of Dcpu.Registers).concat(x for x of Dcpu.Specials)
 
 Dcpu.ReservedOp = (x for x of Dcpu.BinaryOp).concat(x for x of Dcpu.SpecialOp).concat(
-  [ "jmp", "brk", "ret", "bra", "dat", "org" ])
+  [ "jmp", "hlt", "ret", "bra", "dat", "org", "equ" ])
 
 exports.Dcpu = Dcpu

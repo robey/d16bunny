@@ -463,8 +463,8 @@ class Assembler
       @setText("pc")
       line.operands.unshift(@parseOperand(true))
       return @compileParsedLine(line, org)
-    if line.op == "brk"
-      if line.operands.length != 0 then @fail line.pos, "BRK has no parameters"
+    if line.op == "hlt"
+      if line.operands.length != 0 then @fail line.pos, "HLT has no parameters"
       return @compileLine("sub pc, 1", org)
     if line.op == "ret"
       if line.operands.length != 0 then @fail line.pos, "RET has no parameters"
