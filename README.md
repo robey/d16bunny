@@ -134,7 +134,6 @@ to-do
 
 - #include "filename"
 - allow "label:"
-- allow local labels ".out:"
 
 
 thanks
