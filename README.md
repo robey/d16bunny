@@ -63,28 +63,38 @@ the basic notch syntax is supported:
   labels may contain letters, digits, "_", and ".".
 - constant (immediate) values can be decimal integers, hex integers if
   prefixed by "0x", binary integers if prefixed by "0b", or label names.
-
-these common extensions are also supported:
-
 - operands can be arbitrarily nested expressions using the standard operators
-  +, -, *, /, %, <<, >>, &, ^, and |, with their standard C precedenc, and ()
+  +, -, *, /, %, <<, >>, &, ^, and |, with their standard C precedence, and ()
   for precedence grouping. operand expressions must evaluate to constants at
   compile-time, but they can use forward references.
-- "JMP expr", "RET", and "BRK" are aliases for "SET PC, expr", "SET PC, POP",
-  and "SUB PC, 1" respectively.
-- the current (compiling) PC can be set with "ORG addr".
-- constants can be defined with "name = expr", or with "#define name expr".
-- the "DAT" instruction accepts words, characters using 'c', "fat" strings
-  (one word per character) using "string", and packed strings (one half-word
-  per character, big-endian) using p"string".
 
-there are also some "fancy" new additions:
+supported aliases:
 
+- "JMP expr" for "SET PC, expr"
+- "RET" for "SET PC, POP"
+- "HLT" for "SUB PC, 1" (which some emulators use as a hint to pause
+  execution until the next interrupt)
 - "BRA addr" will perform a short (one-word) relative jump using "ADD PC, n"
-  or "SUB PC, n". it will log an error if the address is too far away.
-- the special label "." can always be used to refer to the PC of the current
-  line being compiled.
-- macros can be defined using the deNULL syntax, which looks like this:
+  or "SUB PC, n". it will log an error if the address is too far away. the
+  DCPU can only jump 30 words in either direction in this form.
+- the special label "." (or "$") can always be used to refer to the PC of
+  the current line being compiled.
+
+directives
+==========
+
+assembler directives start with either "#" or ".". the following directives
+are supported:
+
+- `.ORG <addr>`
+  move to a new target address for compilation (for compatibility, this
+  directive may also be used without the "#" or ".").
+
+- `.EQU <name> <expr>` or `.DEFINE <name> <expr>`
+  assign a constant that can be used in expressions.
+
+- `.MACRO <name>(<args...>)`
+  define a macro which can be expanded by name elsewhere. for example:
 
       #macro swap(r1, r2) {
         set push, r1
@@ -92,9 +102,22 @@ there are also some "fancy" new additions:
         set r2, pop
       }
 
-- macro calls perform text substitution, and look like function calls:
+  which may be expanded later:
 
       swap(x, y)
+
+data
+====
+
+the "DAT" instruction takes a comma-separated list of expressions, evaluates
+them into words, and puts them directly into the compiled output. aside from
+normal expressions that can be used in any instruction, "DAT" also supports:
+
+- ASCII characters, in single quotes: 'c' (0x0063)
+- fat strings (one word per character), in double quotes: "fat" (0x0066,
+  0x0061, 0x0074)
+- packed strings (one byte per character, big-endian), in double quotes
+  prefixed by by "p": p"fat" (0x6661, 0x7400)
 
 inside character and string data, the following escapes are supported:
 
@@ -108,15 +131,11 @@ to-do
 -----
 
 - #include "filename"
-- EQU
-- SET A, [B-1]
 - allow "$" for "." (current PC)
 - allow "label:"
 - allow local labels ".out:"
-- test: SET 1, X (should compile, but maybe give warning)
-- rename BRK to HLT
-- JMP unresolvable \ \ \ gibberish <- gives wrong error for gibberish
-- - assembler: string form with high bit set on last char
+- assembler: string form with high bit set on last char
+- test: that macro for jsrr.
 
 
 thanks
