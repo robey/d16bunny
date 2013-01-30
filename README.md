@@ -104,6 +104,21 @@ inside character and string data, the following escapes are supported:
     \z    null (0x0000)
     \xNN  any single half-word (0x0000 - 0x00ff)
 
+to-do
+-----
+
+- #include "filename"
+- EQU
+- SET A, [B-1]
+- allow "$" for "." (current PC)
+- allow "label:"
+- allow local labels ".out:"
+- test: SET 1, X (should compile, but maybe give warning)
+- rename BRK to HLT
+- JMP unresolvable \ \ \ gibberish <- gives wrong error for gibberish
+- - assembler: string form with high bit set on last char
+
+
 thanks
 ------
 
