@@ -349,14 +349,16 @@ class Assembler
       if @text[@pos] == '"'
         s = @parseString()
         data.push(s.charCodeAt(i)) for i in [0 ... s.length]
-      else if @pos + 1 < @end and @text[@pos] == 'p' and @text[@pos + 1] == '"'
-        # packed string
+      else if @pos + 1 < @end and (@text[@pos] == 'p' or @text[@pos] == 'r') and @text[@pos + 1] == '"'
+        # packed/rom string
+        rom = @text[@pos] == 'r'
         @pos++
         s = @parseString()
         word = 0
         inWord = false
         for i in [0 ... s.length]
           ch = s.charCodeAt(i)
+          if rom and i == s.length - 1 then ch |= 0x80
           if inWord then data.push(word | ch) else (word = ch << 8)
           inWord = not inWord
         if inWord then data.push(word)

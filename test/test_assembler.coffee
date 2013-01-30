@@ -121,6 +121,13 @@ describe "Assemble.parseLine", ->
     line.data.length.should.equal(8)
     line.data.should.eql([ 3, 9, 0x40, 0x63, 0x61, 0x74, 0x6361, 0x7400 ])
 
+  it "parses rom strings", ->
+    a = new d16bunny.Assembler(logger)
+    line = a.parseLine("dat r\"cat\"")
+    line.op.should.equal("dat")
+    line.data.length.should.equal(2)
+    line.data.should.eql([ 0x6361, 0xf400 ])
+
 describe "Assembler.compileLine", ->
   it "compiles a simple set", ->
     a = new d16bunny.Assembler(logger)

@@ -118,6 +118,8 @@ normal expressions that can be used in any instruction, "DAT" also supports:
   0x0061, 0x0074)
 - packed strings (one byte per character, big-endian), in double quotes
   prefixed by by "p": p"fat" (0x6661, 0x7400)
+- rom strings (one byte per character, big-endian, with the high bit set on
+  the last byte), in double quotes prefixed by "r": r"fat" (0x6661, 0xf400)
 
 inside character and string data, the following escapes are supported:
 
@@ -131,11 +133,8 @@ to-do
 -----
 
 - #include "filename"
-- allow "$" for "." (current PC)
 - allow "label:"
 - allow local labels ".out:"
-- assembler: string form with high bit set on last char
-- test: that macro for jsrr.
 
 
 thanks
