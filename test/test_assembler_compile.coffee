@@ -167,6 +167,24 @@ describe "Assembler.compile", ->
       { org: 0x1000, data: [ 0x7301, 0x9322, 0x7f82, 0xffe ] }
     ])
 
+  it "handles local labels", ->
+    code = [
+      ".org 0x1000"
+      ":start"
+      "  set a, 0"
+      ":.1"
+      "  ife x, 1"
+      "    bra .1"
+      ":end"
+      "  jmp .1"
+      "  set y, 0"
+      ":.1"
+      "  ret"
+    ]
+    build(code).should.eql([
+      { org: 0x1000, data: [ 0x8401, 0x8872, 0x8f83, 0x7f81, 0x1006, 0x8481, 0x6381 ] }
+    ])
+
 describe "Assembler.continueCompile", ->
   it "compiles a small program in two pieces", ->
     code1 = [ "text = 0x8000", "; comment", "set a, 0" ]

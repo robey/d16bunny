@@ -38,6 +38,7 @@ class Assembler
     @pos = 0           # current index within text
     @end = 0           # parsing should not continue past end
     @inMacro = false   # waiting for an "}"
+    @lastLabel = null  # for resolving relative labels
     # when evaluating macros, this holds the current parameter set:
     @vars = {}
     # macros that have been defined:
@@ -140,6 +141,7 @@ class Assembler
       else if Dcpu.Registers[operand]?
         Expression::Register(@text, loc, Dcpu.Registers[operand])
       else if Assembler::LabelRegex.exec(operand)?
+        if operand[0] == "." and @lastLabel? then operand = @lastLabel + operand
         Expression::Label(@text, loc, operand)
       else
         @fail loc, "Expected operand"
@@ -396,6 +398,10 @@ class Assembler
     if @text[@pos] == ':'
       @pos++
       line.label = @parseWord("Label")
+      if line.label[0] == "."
+        if @lastLabel? then line.label = @lastLabel + line.label
+      else
+        @lastLabel = line.label
       @skipWhitespace()
     return line if @pos == @end
 
