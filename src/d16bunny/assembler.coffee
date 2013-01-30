@@ -217,9 +217,12 @@ class Assembler
 
     # special case: [literal + register]
     if inPointer and expr.binary? and (expr.left.register? or expr.right.register?)
-      if expr.binary != '+' then @fail loc, "Only a value + register is allowed"
+      if not (expr.binary in [ '+', '-' ]) then @fail loc, "Only a value +/- register is allowed"
       register = if expr.left.register? then expr.left.register else expr.right.register
+      op = expr.binary
       expr = if expr.left.register? then expr.right else expr.left
+      # allow [R-n]
+      if op == '-' then expr = Expression::Unary(expr.text, expr.pos, '-', expr)
       return { loc: loc, code: 0x10 + register, expr: expr }
 
     { loc: loc, code: (if inPointer then 0x1e else 0x1f), expr: expr }
@@ -268,7 +271,7 @@ class Assembler
   parseDefineDirective: ->
     name = @parseWord("Definition name")
     @skipWhitespace()
-    value = @parseExpression(0).evaluate()
+    value = @parseExpression(0).evaluate(@symtab)
     @symtab[name] = value
 
   # a directive starts with "#".
@@ -395,7 +398,7 @@ class Assembler
       delete line.op
       @pos++
       @skipWhitespace()
-      value = @parseExpression(0).evaluate()
+      value = @parseExpression(0).evaluate(@symtab)
       @symtab[name] = value
       return line
 
@@ -525,7 +528,15 @@ class Assembler
   # the compiler will try to continue if there are errors, to greedily find
   # as many of the errors as it can. after 'maxErrors', it will stop.
   compile: (lines, org = 0, maxErrors = 10) ->
-    infos = []
+    @infos = []
+    @continueCompile(lines, org, maxErrors)
+
+  # compile new lines without clearing out old compiled blocks.
+  # may be used to compile several files as if they were one unit.
+  # this function does not know/care if a previous run had errors, so you
+  # should check the errorCount after each run.
+  continueCompile: (lines, org = null, maxErrors = 10) ->
+    if not org? then org = @lastOrg
     errorCount = 0
     giveUp = false
     defaultValue = { org: org, data: [] }
@@ -549,17 +560,18 @@ class Assembler
     for i in [0 ... lines.length]
       line = lines[i]
       info = process i, => @compileLine(line, org)
-      infos.push(info)
+      @infos.push(info)
       org = info.org + info.data.length
     # pass 2:
     for i in [0 ... lines.length]
-      info = infos[i]
+      info = @infos[i]
       process i, => @resolveLine(info)
       # if anything failed, fill it in with zeros.
       for j in [0 ... info.data.length]
         if typeof info.data[j] == 'object'
           info.data[j] = 0
-    new AssemblerOutput(errorCount, infos, @symtab)
+    @lastOrg = org
+    new AssemblerOutput(errorCount, @infos, @symtab)
 
 exports.Assembler = Assembler
 exports.AssemblerError = AssemblerError
