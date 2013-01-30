@@ -153,6 +153,20 @@ describe "Assembler.compile", ->
       { org: 0x200, data: [ 0x7c01, 0x203 ] }
     ])
 
+  it "tracks $ correctly through macros", ->
+    code = [
+      ".macro jsrr(addr) {"
+      "  set push, pc"
+      "  add peek, 3"
+      "  add pc, addr - $"
+      "}"
+      ".org 0x1000"
+      "jsrr(0x2000)"
+    ]
+    build(code).should.eql([
+      { org: 0x1000, data: [ 0x7301, 0x9322, 0x7f82, 0xffe ] }
+    ])
+
 describe "Assembler.continueCompile", ->
   it "compiles a small program in two pieces", ->
     code1 = [ "text = 0x8000", "; comment", "set a, 0" ]

@@ -38,7 +38,7 @@ class AssemblerOutput
         k = @lines[j].data.length
         data[n ... n + k] = @lines[j].data
         n += k
-      blocks.push(org: orgStart, data: data)
+      if data.length > 0 then blocks.push(org: orgStart, data: data)
     blocks.sort((a, b) -> a.org > b.org)
     @cachedPack = blocks
     blocks

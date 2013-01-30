@@ -440,6 +440,9 @@ class Assembler
 
   compileParsedLine: (line, org) ->
     @debug "  parsed line: ", line
+    # ensure ./$ are set for macro expansions
+    @symtab["."] = org
+    @symtab["$"] = org
     if line.label? then @symtab[line.label] = org
     if line.data? then return { data: line.data, org: org }
     if line.expanded?
@@ -450,7 +453,7 @@ class Assembler
           @fail line.pos, "Sorry, you can't use ORG in a macro."
         newinfo = @compileParsedLine(x, org)
         info.data = info.data.concat(newinfo.data)
-        org += newinfo.data.size
+        org += newinfo.data.length
         @debug "  finished macro expansion: ", newinfo
       return info
     if not line.op? then return { data: [], org: org }
