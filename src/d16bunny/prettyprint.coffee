@@ -1,7 +1,7 @@
 
 class PrettyPrinter
   # gray, yellow, orange, red, purple, blue, cyan, green
-  colors: [ "37", "33;1", "33", "31", "35", "34", "36", "32" ]
+  colors: [ "37", "33;1", "33", "31", "35", "34;1", "36", "32" ]
 
   inColor: (s, colorIndex) ->
     colorIndex %= 8

@@ -202,12 +202,18 @@ describe "Assembler.compileLine", ->
   it "compiles a definition with EQU", ->
     a = new d16bunny.Assembler(logger)
     x = a.compileLine(":happy equ 23", 0)
-    a.symtab.should.eql(happy: 23, ".": 0)
+    a.symtab.should.eql(happy: 23, ".": 0, "$": 0)
 
   it "turns HLT into SUB PC, 1", ->
     a = new d16bunny.Assembler(logger)
     info = a.compileLine("hlt", 0)
     info.data.should.eql([ 0x8b83 ])
+
+  it "compiles a meaningless but valid line", ->
+    a = new d16bunny.Assembler(logger)
+    info = a.compileLine("set 1, a", 0)
+    info.data.should.eql([ 0x03e1, 0x0001 ])
+
 
 describe "Assembler.resolveLine", ->
   it "resolves a short relative branch", ->

@@ -267,12 +267,22 @@ class Assembler
     if not @macros[name]? then @macros[name] = []
     @macros[name].push(argNames.length)
     @inMacro = fullname
+    {}
 
   parseDefineDirective: ->
     name = @parseWord("Definition name")
     @skipWhitespace()
     value = @parseExpression(0).evaluate(@symtab)
     @symtab[name] = value
+    {}
+
+  parseOrgDirective: ->
+    @skipWhitespace()
+    loc = @pos
+    expr = @parseExpression(0)
+    @skipWhitespace()
+    if @pos < @end then @fail @pos, "ORG requires a single parameter"
+    { op: "org", operands: [ { loc: loc, code: 0, expr: expr } ] }
 
   # a directive starts with "#".
   parseDirective: ->
@@ -281,7 +291,8 @@ class Assembler
     @skipWhitespace()
     switch directive
       when "macro" then @parseMacroDirective()
-      when "define" then @parseDefineDirective()
+      when "define", "equ" then @parseDefineDirective()
+      when "org" then @parseOrgDirective()
       else @fail loc, "Unknown directive: " + directive
 
   parseMacroArgs: ->
@@ -377,10 +388,9 @@ class Assembler
       else
         @macros[@inMacro].lines.push(text)
       return line
-    if @text[@pos] == '#'
+    if @text[@pos] == '#' or @text[@pos] == '.'
       @pos++
-      @parseDirective()
-      return line
+      return @parseDirective()
     if @text[@pos] == ':'
       @pos++
       line.label = @parseWord("Label")
