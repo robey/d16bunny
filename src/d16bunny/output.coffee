@@ -55,6 +55,26 @@ class AssemblerOutput
       if line.org <= address < line.end then return line.lineno
       if address < line.org then hi = n else lo = n + 1
 
+  # return the line # closest to an address in the compiled code. if there's
+  # nothing within 0x100, return null.
+  memToClosestLine: (address) ->
+    lo = 0
+    hi = @lineMap.length
+    loop
+      if lo == hi
+        # find closest candidate
+        candidates = []
+        if hi < @lineMap.length then candidates.push(addr: @lineMap[hi].org, lineno: @lineMap[hi].lineno)
+        if lo > 0 then candidates.push(addr: @lineMap[lo - 1].end - 1, lineno: @lineMap[lo - 1].lineno)
+        for c in candidates then c.distance = Math.abs(c.addr - address)
+        candidates.sort (a, b) => a.distance - b.distance
+        if candidates.length == 0 or candidates[0].distance > 0x100 then return null
+        return candidates[0].lineno
+      n = lo + Math.floor((hi - lo) / 2)
+      line = @lineMap[n]
+      if line.org <= address < line.end then return line.lineno
+      if address < line.org then hi = n else lo = Math.min(n + 1, hi)
+
   # return the memory address containing code compiled from a given line.
   # if the line has no code on it, return null.
   lineToMem: (lineno) ->
