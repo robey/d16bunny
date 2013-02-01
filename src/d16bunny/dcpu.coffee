@@ -11,6 +11,8 @@ Dcpu =
     "pc":   0x1c
     "ex":   0x1d
 
+  RegisterRegex: /^(a|b|c|x|y|z|i|j|push|pop|peek|pick|sp|pc|ex)\b/i
+
   BinaryOp:
     "set": 0x01
     "add": 0x02

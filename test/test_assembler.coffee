@@ -3,60 +3,6 @@ d16bunny = require '../src/d16bunny'
 
 logger = (lineno, pos, message) ->
 
-describe "Assembler.parseOperand", ->
-  it "parses registers", ->
-    a = new d16bunny.Assembler(logger)
-    a.setText("j")
-    info = a.parseOperand(destination = false)
-    info.code.should.equal(7)
-    info.expr?.should.equal(false)
-
-  it "parses register pointers", ->
-    a = new d16bunny.Assembler(logger)
-    a.setText("[j]")
-    info = a.parseOperand(destination = false)
-    info.code.should.equal(15)
-    info.expr?.should.equal(false)
-
-  it "parses special stack operations", ->
-    a = new d16bunny.Assembler(logger)
-    a.setText("peek")
-    info = a.parseOperand(destination = false)
-    info.code.should.equal(0x19)
-    info.expr?.should.equal(false)
-
-  it "parses immediates", ->
-    a = new d16bunny.Assembler(logger)
-    a.setText("0x800")
-    info = a.parseOperand(destination = false)
-    info.code.should.equal(0x1f)
-    info.expr.evaluate().should.equal(0x800)
-
-  it "parses immediate pointers", ->
-    a = new d16bunny.Assembler(logger)
-    a.setText("[0x800]")
-    info = a.parseOperand(destination = false)
-    info.code.should.equal(0x1e)
-    info.expr.evaluate().should.equal(0x800)
-
-  it "parses pointer operations", ->
-    a = new d16bunny.Assembler(logger)
-    a.setText("[0x20 + x]")
-    info = a.parseOperand(destination = false)
-    info.code.should.equal(0x13)
-    info.expr.evaluate().should.equal(32)
-    a.setText("[15+24+i]")
-    info = a.parseOperand(destination = false)
-    info.code.should.equal(0x16)
-    info.expr.evaluate().should.equal(39)
-
-  it "parses pick", ->
-    a = new d16bunny.Assembler(logger)
-    a.setText("pick leftover - 23")
-    info = a.parseOperand(destination = false)
-    info.code.should.equal(0x1a)
-    info.expr.evaluate(leftover: 25).should.equal(2)
-
 describe "Assemble.parseLine", ->
   it "parses comment lines", ->
     x = new d16bunny.Assembler(logger).parseLine("; comment.")

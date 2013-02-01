@@ -4,12 +4,12 @@ AssemblerError = require('./errors').AssemblerError
 
 # an expression tree.
 class Expression
-  Register: (text, pos, r) ->
+  Register: (text, pos, name) ->
     e = new Expression(text, pos)
-    e.register = r
+    e.register = name.toLowerCase()
     e.evaluate = (symtab) ->
       throw new AssemblerError(@text, @pos, "Constant expressions may not contain register references")
-    e.toString = -> Dcpu.RegisterNames[@register] if @register
+    e.toString = -> @register.toUpperCase()
     e.resolvable = (symtab) -> true
     e
 

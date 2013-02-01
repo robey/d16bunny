@@ -15,6 +15,8 @@ class PrettyPrinter
       when 'object'
         if obj instanceof Array
           @dumpArray(obj, colorIndex + 1)
+        else if obj instanceof RegExp
+          @inColor(obj.toString(), colorIndex)
         else
           @dumpObject(obj, colorIndex + 1)
       else @inColor(obj.toString(), colorIndex)
