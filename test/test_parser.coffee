@@ -85,38 +85,103 @@ describe "Parser", ->
       html.should.eql("{identifier:cats} {operator:+} {identifier:dogs}")
 
   describe "parseOperand", ->
-    parseOperand = (s, symtab={}) ->
+    html = ""
+
+    parseOperand = (s, symtab={}, destination=false) ->
       p = new d16bunny.Parser(logger)
       line = new d16bunny.Line(s)
-      x = p.parseOperand(line)
+      x = p.parseOperand(line, destination)
       x.resolve(symtab)
+      html = trimHtml(line.toHtml())
       x.toString()
 
     it "parses registers", ->
       parseOperand("j").should.eql("<7>")
+      html.should.eql("{register:j}")
       parseOperand("J").should.eql("<7>")
+      html.should.eql("{register:J}")
       parseOperand("X").should.eql("<3>")
+      html.should.eql("{register:X}")
       parseOperand("ex").should.eql("<29>")
+      html.should.eql("{register:ex}")
 
     it "parses register pointers", ->
       parseOperand("[j]").should.eql("<15>")
+      html.should.eql("{operator:[}{register:j}{operator:]}")
       parseOperand("[J]").should.eql("<15>")
+      html.should.eql("{operator:[}{register:J}{operator:]}")
       (-> parseOperand("[ex]")).should.throw(/can't dereference/)
 
     it "parses special stack operations", ->
       parseOperand("peek").should.eql("<25>")
+      html.should.eql("{register:peek}")
 
     it "parses immediates", ->
       parseOperand("0x800").should.eql("<31, 2048>")
+      html.should.eql("{number:0x800}")
+
+    it "parses immediate chars", ->
+      parseOperand("'A'").should.eql("<31, 65>")
+      html.should.eql("{string:&#39;A&#39;}")
 
     it "parses immediate pointers", ->
       parseOperand("[0x800]").should.eql("<30, 2048>")
+      html.should.eql("{operator:[}{number:0x800}{operator:]}")
 
     it "parses pointer operations", ->
       parseOperand("[0x20 + x]").should.eql("<19, 32>")
+      html.should.eql("{operator:[}{number:0x20} {operator:+} {register:x}{operator:]}")
       parseOperand("[15+24+i]").should.eql("<22, 39>")
+      html.should.eql("{operator:[}{number:15}{operator:+}{number:24}{operator:+}{register:i}{operator:]}")
       parseOperand("[a+9]").should.eql("<16, 9>")
+      html.should.eql("{operator:[}{register:a}{operator:+}{number:9}{operator:]}")
       parseOperand("[a-2]").should.eql("<16, 65534>")
 
     it "parses pick", ->
       parseOperand("pick leftover - 23", { leftover: 25 }).should.eql("<26, 2>")
+      html.should.eql("{register:pick} {identifier:leftover} {operator:-} {number:23}")
+
+    it "parses push/pop", ->
+      parseOperand("push", {}, true).should.eql("<24>")
+      html.should.eql("{register:push}")
+      parseOperand("pop", {}, false).should.eql("<24>")
+      html.should.eql("{register:pop}")
+      (-> parseOperand("push", {}, false)).should.throw(/can't use PUSH/)
+      (-> parseOperand("pop", {}, true)).should.throw(/can't use POP/)
+
+  describe "parseLine", ->
+    html = ""
+    parser = null
+
+    parseLine = (s) ->
+      parser = new d16bunny.Parser(logger)
+      line = parser.parseLine(s)
+      html = trimHtml(line.toHtml())
+      for op in line.operands then op.resolve()
+      line.toString()
+
+    it "parses comment lines", ->
+      parseLine("; comment.").should.eql("")
+      html.should.eql("{comment:; comment.}")
+
+    it "parses a single op", ->
+      parseLine("  nop").should.eql("NOP")
+      html.should.eql("  {instruction:nop}")
+
+    it "parses a labeled line", ->
+      parseLine(":start").should.eql(":start ")
+      html.should.eql("{label::start}")
+      parseLine(":start  nop").should.eql(":start NOP")
+      html.should.eql("{label::start}  {instruction:nop}")
+
+    it "parses a line with operands", ->
+      parseLine(":last set [a], ','").should.eql(":last SET <8>, <31, 44>")
+
+    it "parses a definition with =", ->
+      parseLine("screen = 0x8000").should.eql(".define screen (32768)")
+      html.should.eql("{identifier:screen} {operator:=} {number:0x8000}")
+
+    it "parses a definition with #define", ->
+      a = new d16bunny.Assembler(logger)
+      parseLine("#define happy 23").should.eql(".define happy (23)")
+      html.should.eql("{directive:#define} {identifier:happy} {number:23}")

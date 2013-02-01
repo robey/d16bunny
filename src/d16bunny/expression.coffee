@@ -27,8 +27,6 @@ class Expression
     e = new Expression(text, pos)
     e.label = x
     e.evaluate = (symtab) ->
-      if Dcpu.Reserved[@label]
-        throw new AssemblerError(@text, @pos, "You can't use " + @label.toUpperCase() + " in expressions.")
       if not symtab[@label]?
         throw new AssemblerError(@text, @pos, "Can't resolve reference to " + @label)
       symtab[@label]

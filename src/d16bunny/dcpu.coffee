@@ -11,8 +11,6 @@ Dcpu =
     "pc":   0x1c
     "ex":   0x1d
 
-  RegisterRegex: /^(a|b|c|x|y|z|i|j|push|pop|peek|pick|sp|pc|ex)\b/i
-
   BinaryOp:
     "set": 0x01
     "add": 0x02
@@ -54,6 +52,8 @@ Dcpu =
     "hwi": 0x12
 
 Dcpu.Reserved = (x for x of Dcpu.Registers).concat(x for x of Dcpu.Specials)
+
+Dcpu.RegisterRegex = new RegExp("^(" + Dcpu.Reserved.join("|") + ")\\b", "i")
 
 Dcpu.ReservedOp = (x for x of Dcpu.BinaryOp).concat(x for x of Dcpu.SpecialOp).concat(
   [ "jmp", "hlt", "ret", "bra", "dat", "org", "equ" ])

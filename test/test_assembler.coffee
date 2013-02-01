@@ -4,28 +4,6 @@ d16bunny = require '../src/d16bunny'
 logger = (lineno, pos, message) ->
 
 describe "Assemble.parseLine", ->
-  it "parses comment lines", ->
-    x = new d16bunny.Assembler(logger).parseLine("; comment.")
-    x.should.eql({})
-
-  it "parses a single op", ->
-    x = new d16bunny.Assembler(logger).parseLine("  nop")
-    x.label?.should.equal(false)
-    x.op.should.equal("nop")
-
-  it "parses a labeled line", ->
-    x = new d16bunny.Assembler(logger).parseLine(":start")
-    x.label.should.equal("start")
-    x.op?.should.equal(false)
-
-  it "parses a line with operands", ->
-    line = new d16bunny.Assembler(logger).parseLine(":last set [a], ','")
-    line.label.should.equal("last")
-    line.op.should.equal("set")
-    line.operands.length.should.equal(2)
-    line.operands[0].code.should.equal(0x08)
-    line.operands[1].code.should.equal(0x1f)
-    line.operands[1].expr.toString().should.equal("44")
 
   it "parses a definition with =", ->
     a = new d16bunny.Assembler(logger)

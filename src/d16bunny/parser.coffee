@@ -13,6 +13,8 @@ class Span
   StringEscape: "string-escape"
   Register: "register"
   Number: "number"
+  Instruction: "instruction"
+  Label: "label"
 
   constructor: (@type, @start, @end) ->
 
@@ -24,10 +26,23 @@ class Line
     # things parsed out:
     @label = null       # label (if any)
     @op = null          # operation (if any)
+    @directive = null   # directive, if this is a directive instead.
+    @name = null        # name (if a constant is being defined)
     @operands = []      # array of expressions
     @data = []          # array of expressions, if this is a line of raw data
     @expanded = null    # list of other Line objects, if this is an expanded macro
     @spans = []         # spans for syntax highlighting
+
+  toString: ->
+    [
+      if @label? then ":#{@label} " else ""
+      if @op? then @op.toUpperCase() else ""
+      if @directive? then ".#{@directive}" else ""
+      if @name? then " #{@name}" else ""
+    ].join("") +
+      @operands.map((x) => " " + x.toString()).join(",") +
+      @data.map((x) => x.toString()).join(", ") +
+      if @expanded? then ("{ " + @expanded.map((x) => x.toString()) + " }") else ""
 
   # useful for unit tests
   setText: (text) ->
@@ -210,55 +225,57 @@ class Parser
       if line.scan("}", Span::Directive)
         @inMacro = false
 
-
-
     #   else
     #     @macros[@inMacro].lines.push(text)
     #   return line
-    # if @text[@pos] == '#' or @text[@pos] == '.'
-    #   @pos++
-    #   return @parseDirective()
-    # if @text[@pos] == ':'
-    #   @pos++
-    #   line.label = @parseWord("Label")
-    #   if line.label[0] == "."
-    #     if @lastLabel? then line.label = @lastLabel + line.label
-    #   else
-    #     @lastLabel = line.label
-    #   @skipWhitespace()
-    # return line if @pos == @end
+    if line.scan("#", Span::Directive) or line.scan(".", Span::Directive)
+      return line.parseDirective()
 
-    # line.pos = @pos
-    # line.op = @parseWord("Operation name")
-    # if @vars[line.op] then line.op = @vars[line.op]
-    # @skipWhitespace()
+    if line.scan(":", Span::Label)
+      line.label = line.parseWord("Label", Span::Label)
+      if line.label[0] == "."
+        if @lastLabel? then line.label = @lastLabel + line.label
+      else
+        @lastLabel = line.label
+      line.skipWhitespace()
+    return line if line.finished()
 
-    # if @text[@pos] == '='
-    #   # special case "name = value"
-    #   name = line.op
-    #   delete line.op
-    #   @pos++
-    #   @skipWhitespace()
-    #   value = @parseExpression(0).evaluate(@symtab)
-    #   @symtab[name] = value
-    #   return line
+    opStart = line.pos
+    line.op = line.parseWord("Operation name", Span::Instruction)
+    if @vars[line.op] then line.op = @vars[line.op]
+    line.skipWhitespace()
+
+    if line.scan("=", Span::Operator)
+      # special case "name = value"
+      line.rewind(opStart)
+      delete line.op
+      line.directive = "define"
+      line.name = line.parseWord("Constant name", Span::Identifier)
+      line.skipWhitespace()
+      line.scan("=", Span::Operator)
+      line.skipWhitespace()
+      line.operands.push @parseExpression(line)
+      line.skipWhitespace()
+      if not line.finished() then line.fail "Unexpected content after definition"
+      return line
+
+    # FIXME make sure macros can't have directives.
 
     # if @macros[line.op] then return @parseMacroCall(line)
     # if line.op == "dat" then return @parseData(line)
 
-    # # any other operation is assumed to take actual operands
-    # line.operands = []
-    # while @pos < @end
-    #   line.operands.push(@parseOperand(line.operands.length == 0))
-    #   @skipWhitespace()
-    #   if @pos < @end and @text[@pos] == ','
-    #     @pos++
-    #     @skipWhitespace()
-    # line
+    # any other operation is assumed to take actual operands
+    line.operands = []
+    while not line.finished()
+      line.operands.push(@parseOperand(line, line.operands.length == 0))
+      line.skipWhitespace()
+      if not line.finished() and line.scan(",", Span::Operator) then line.skipWhitespace()
+
+    line
 
   parseExpression: (line, precedence = 0) ->
     line.skipWhitespace()
-    if line.finished() then line.fail "Expression expected"
+    if line.finished() then line.fail "Expected expression"
     left = @parseUnary(line)
     loop
       line.skipWhitespace()
@@ -318,7 +335,7 @@ class Parser
       if x[0] == "." and @lastLabel? then x = @lastLabel + x
       return Expression::Label(line.text, line.getMark(), x)
     line.rewind()
-    line.fail "Expected operand"
+    line.fail "Expected expression"
 
   # ----- operands
 
@@ -394,7 +411,27 @@ class Parser
   # ----- data
 
 
-  # ----- macros
+  # ----- directives
+
+  # a directive starts with "#" or "."
+  parseDirective: (line) ->
+    start = line.pos
+    line.directive = line.parseWord("Directive")
+    line.skipWhitespace()
+    switch directive
+      when "macro" then @parseMacroDirective(line)
+      when "define", "equ" then @parseDefineDirective(line)
+      when "org" then @parseOrgDirective(line)
+      else
+        line.rewind(start)
+        line.fail "Unknown directive: #{directive}"
+
+  parseDefineDirective: (line) ->
+    line.name = @parseWord("Definition name")
+    line.skipWhitespace()
+    line.operands.push = @parseExpression()
+    line.skipWhitespace()
+    if not line.finished() then @fail "Unexpected content after definition"
 
   parseMacroDefinition: (line) ->
     line.setMark()
