@@ -31,7 +31,7 @@ class Expression
         throw new AssemblerError(@text, @pos, "Can't resolve reference to " + @label)
       symtab[@label]
     e.toString = -> @label
-    e.dependency = (symtab) -> if symtab[@label]? then null else @label
+    e.dependency = (symtab) -> if symtab?[@label]? then null else @label
     e
 
   Unary: (text, pos, op, r) ->

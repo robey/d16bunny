@@ -41,7 +41,7 @@ class Line
       if @name? then " #{@name}" else ""
     ].join("") +
       @operands.map((x) => " " + x.toString()).join(",") +
-      if @expanded? then ("{ " + @expanded.map((x) => x.toString()) + " }") else ""
+      if @expanded? then ("{" + @expanded.map((x) => " " + x.toString()).join(";") + " }") else ""
 
   # useful for unit tests
   setText: (text) ->
@@ -80,11 +80,11 @@ class Line
 
   finished: -> @pos == @end
 
-  setMark: -> @mark = @pos
+  mark: -> { pos: @pos, spanLength: @spans.length }
 
-  getMark: -> @mark
-
-  rewind: (n = null) -> @pos = if n? then n else @mark
+  rewind: (m) ->
+    @pos = m.pos
+    @spans = @spans[0 ... m.spanLength]
 
   scan: (s, type) ->
     len = s.length
@@ -158,6 +158,31 @@ class Line
     if Dcpu.Reserved[word] or Dcpu.ReservedOp[word] then @fail "Reserved keyword: #{word}"
     word
 
+  # just want all the literal text up to the next comma, closing paren, or
+  # comment. but also allow quoting strings and chars.
+  parseMacroArg: ->
+    inString = false
+    inChar = false
+    rv = ""
+    while not @finished()
+      return rv if (@text[@pos] in [ ';', ')', ',' ]) and not inString and not inChar
+      start = @pos
+      if @text[@pos] == '\\' and @pos + 1 < @end
+        rv += @text[@pos++]
+        rv += @text[@pos++]
+        @addSpan(Span::StringEscape, start, @pos)
+      else
+        ch = @text[@pos]
+        rv += ch
+        if ch == '"' then inString = not inString
+        if ch == "\'" then inChar = not inChar
+        @pos++
+        # FIXME: "string" may not be the best syntax indicator
+        @addSpan(Span::String, start, @pos)
+    if inString then @fail "Expected closing \""
+    if inChar then @fail "Expected closing \'"
+    rv
+
 
 class Operand
   # pos: where it is in the string
@@ -189,8 +214,9 @@ class Operand
 
 
 class Macro
-  constructor: (@name, @args) ->
-    @lines = []
+  constructor: (@name, @parameters) ->
+    @textLines = []
+    @parameterMatchers = @parameters.map (p) -> new RegExp("\\b#{p}\\b", "g")
 
 
 # parse lines of DCPU assembly into structured data.
@@ -218,7 +244,7 @@ class Parser
     '^' : 6
     '|' : 5
 
-  constructor: ->
+  constructor: (@logger) ->
     @reset()
 
   reset: ->
@@ -246,7 +272,7 @@ class Parser
       if line.scan("}", Span::Directive)
         @inMacro = false
       else
-        @macros[@inMacro].lines.push(text)
+        @macros[@inMacro].textLines.push(text)
       return line
     if line.scan("#", Span::Directive) or line.scan(".", Span::Directive)
       @parseDirective(line)
@@ -261,16 +287,28 @@ class Parser
       line.skipWhitespace()
     return line if line.finished()
 
-    opStart = line.pos
+    opStart = line.mark()
     line.op = line.parseWord("Operation name", Span::Instruction)
-    if @vars[line.op] then line.op = @vars[line.op]
-    line.skipWhitespace()
 
+    if @macros[line.op]
+      line.rewind(opStart)
+      delete line.op
+      return @parseMacroCall(line)
+
+    if line.op == "dat" then return @parseData(line)
+
+    if line.op == "org"
+      line.rewind(opStart)
+      delete line.op
+      line.scan("org", Span::Directive)
+      line.directive = "org"
+      @parseOrgDirective(line)
+      return line
+
+    line.skipWhitespace()
     if line.scan("=", Span::Operator)
       # special case "name = value"
       line.rewind(opStart)
-      line.spans.pop()
-      line.spans.pop()
       delete line.op
       line.directive = "define"
       line.name = line.parseWord("Constant name", Span::Identifier)
@@ -282,21 +320,8 @@ class Parser
       if not line.finished() then line.fail "Unexpected content after definition"
       return line
 
-    # FIXME make sure macros can't have directives.
-
-    # if @macros[line.op] then return @parseMacroCall(line)
-    if line.op == "dat" then return @parseData(line)
-
-    if line.op == "org"
-      line.rewind(opStart)
-      line.spans.pop()
-      delete line.op
-      line.scan("org", Span::Directive)
-      line.directive = "org"
-      @parseOrgDirective(line)
-      return line
-
     # any other operation is assumed to take actual operands
+    if @vars[line.op] then line.op = @vars[line.op]
     line.operands = []
     while not line.finished()
       line.operands.push(@parseOperand(line, line.operands.length == 0))
@@ -314,23 +339,20 @@ class Parser
     loop
       line.skipWhitespace()
       return left if line.finished() or line.matchAhead(Parser::DelimiterRegex)
-      line.setMark()
+      m = line.mark()
       op = line.match(Parser::OperatorRegex, Span::Operator)
       if not op? then line.fail "Unknown operator (try: + - * / % << >> & ^ |)"
       newPrecedence = Parser::Binary[op]
       if newPrecedence <= precedence
-        line.rewind()
-        line.spans.pop()
+        line.rewind(m)
         return left
-      start = line.getMark()
       right = @parseExpression(line, newPrecedence)
-      left = Expression::Binary(line.text, start, op, left, right)
+      left = Expression::Binary(line.text, m.pos, op, left, right)
 
   parseUnary: (line) ->
-    line.setMark()
+    start = line.pos
     op = line.match(Parser::UnaryRegex, Span::Operator)
     if op?
-      start = line.getMark()
       expr = @parseAtom(line)
       Expression::Unary(line.text, start, op, expr)
     else
@@ -340,7 +362,7 @@ class Parser
   parseAtom: (line) ->
     line.skipWhitespace()
     if line.finished() then line.fail "Value expected (operand or expression)"
-    line.setMark()
+    m = line.mark()
     if line.scan("(", Span::Operator)
       atom = @parseExpression(line)
       line.skipWhitespace()
@@ -350,25 +372,25 @@ class Parser
       # literal char
       ch = line.parseChar()
       line.scanAssert("'", Span::String)
-      return Expression::Literal(line.text, line.getMark(), ch.charCodeAt(0))
+      return Expression::Literal(line.text, m.pos, ch.charCodeAt(0))
     if line.scan("%", Span::Register)
       # allow unix-style %A for register names
       x = line.match(Dcpu.RegisterRegex, Span::Register)
       if not x? then line.fail "Expected register name"
-      return Expression::Register(line.text, line.getMark(), x.toLowerCase())
+      return Expression::Register(line.text, m.pos, x.toLowerCase())
     x = line.match(Parser::HexRegex, Span::Number)
-    if x? then return Expression::Literal(line.text, line.getMark(), parseInt(x, 16))
+    if x? then return Expression::Literal(line.text, m.pos, parseInt(x, 16))
     x = line.match(Parser::BinaryRegex, Span::Number)
-    if x? then return Expression::Literal(line.text, line.getMark(), parseInt(x[2...], 2))
+    if x? then return Expression::Literal(line.text, m.pos, parseInt(x[2...], 2))
     x = line.match(Parser::NumberRegex, Span::Number)
-    if x? then return Expression::Literal(line.text, line.getMark(), parseInt(x, 10))
+    if x? then return Expression::Literal(line.text, m.pos, parseInt(x, 10))
     x = line.match(Dcpu.RegisterRegex, Span::Register)
-    if x? then return Expression::Register(line.text, line.getMark(), x.toLowerCase())
+    if x? then return Expression::Register(line.text, m.pos, x.toLowerCase())
     x = line.match(Parser::LabelRegex, Span::Identifier)
     if x?
       if x[0] == "." and @lastLabel? then x = @lastLabel + x
-      return Expression::Label(line.text, line.getMark(), x)
-    line.rewind()
+      return Expression::Label(line.text, m.pos, x)
+    line.rewind(m)
     line.fail "Expected expression"
 
   # ----- operands
@@ -378,7 +400,7 @@ class Parser
   # (which determines whether it uses "push" or "pop").
   parseOperand: (line, destination = false) ->
     @debug "  parse operand: dest=#{destination} pos=#{line.pos}"
-    start = line.pos
+    m = line.mark()
     dereference = false
     inPick = false
 
@@ -390,43 +412,44 @@ class Parser
     expr = @parseExpression(line)
     @debug "  parse operand: expr=#{expr}"
     if dereference then line.scanAssert("]", Span::Operator)
-    if inPick then return new Operand(start, 0x1a, expr)
+    if inPick then return new Operand(m.pos, 0x1a, expr)
     if expr.register? 
       if Dcpu.Specials[expr.register]?
         if dereference
-          line.rewind(start)
+          line.rewind(m)
           line.fail "You can't dereference #{expr.toString()}"
         if (destination and expr.register == "pop") or ((not destination) and expr.register == "push")
-          line.rewind(start)
+          line.rewind(m)
           line.fail "You can't use #{expr.toString()} in this position"
-        return new Operand(start, Dcpu.Specials[expr.register])
-      return new Operand(start, (if dereference then 0x08 else 0x00) + Dcpu.Registers[expr.register])
+        return new Operand(m.pos, Dcpu.Specials[expr.register])
+      return new Operand(m.pos, (if dereference then 0x08 else 0x00) + Dcpu.Registers[expr.register])
     # special case: [literal + register]
     if dereference and expr.binary? and (expr.left.register? or expr.right.register?)
       if expr.binary == '+' or (expr.binary == '-' and expr.left.register?)
         register = if expr.left.register? then expr.left.register else expr.right.register
         if not Dcpu.Registers[register]?
-          line.rewind(start)
+          line.rewind(m)
           line.fail "You can't use #{register.toUpperCase()} in [R+n] form"
         op = expr.binary
         expr = if expr.left.register? then expr.right else expr.left
         # allow [R-n]
         if op == '-' then expr = Expression::Unary(expr.text, expr.pos, '-', expr)
-        return new Operand(start, 0x10 + Dcpu.Registers[register], expr)
-      line.rewind(start)
+        return new Operand(m.pos, 0x10 + Dcpu.Registers[register], expr)
+      line.rewind(m)
       line.fail "Only a register +/- a constant is allowed"
-    new Operand(start, (if dereference then 0x1e else 0x1f), expr)
+    new Operand(m.pos, (if dereference then 0x1e else 0x1f), expr)
 
   # ----- data
 
   # read a list of data objects, which could each be an expression or a string.
   parseData: (line) ->
     line.data = []
+    line.skipWhitespace()
     while not line.finished()
-      start = line.pos
+      m = line.mark()
       if line.scanAhead('"')
         s = line.parseString()
-        line.data.push(Expression::Literal(line.text, start, s.charCodeAt(i))) for i in [0 ... s.length]
+        line.data.push(Expression::Literal(line.text, m.pos, s.charCodeAt(i))) for i in [0 ... s.length]
       else if line.scanAhead('p"') or line.scanAhead('r"')
         if line.scan("r", Span::String)
           rom = true
@@ -438,9 +461,9 @@ class Parser
         for i in [0 ... s.length]
           ch = s.charCodeAt(i)
           if rom and i == s.length - 1 then ch |= 0x80
-          if inWord then line.data.push(Expression::Literal(line.text, start, word | ch)) else (word = ch << 8)
+          if inWord then line.data.push(Expression::Literal(line.text, m.pos, word | ch)) else (word = ch << 8)
           inWord = not inWord
-        if inWord then line.data.push(Expression::Literal(line.text, start, word))
+        if inWord then line.data.push(Expression::Literal(line.text, m.pos, word))
       else
         line.data.push(@parseExpression(line))
       line.skipWhitespace()
@@ -453,7 +476,7 @@ class Parser
 
   # a directive starts with "#" or "."
   parseDirective: (line) ->
-    start = line.pos
+    m = line.mark()
     line.directive = line.parseWord("Directive", Span::Directive)
     line.skipWhitespace()
     switch line.directive
@@ -461,7 +484,7 @@ class Parser
       when "define", "equ" then @parseDefineDirective(line)
       when "org" then @parseOrgDirective(line)
       else
-        line.rewind(start)
+        line.rewind(m)
         line.fail "Unknown directive: #{directive}"
 
   parseDefineDirective: (line) ->
@@ -478,22 +501,22 @@ class Parser
     if not line.finished() then @fail "Unexpected content after origin"
 
   parseMacroDirective: (line) ->
-    line.setMark()
+    m = line.mark()
     line.name = line.parseWord("Macro name")
     line.skipWhitespace()
-    args = @parseMacroArgs(line)
+    parameters = @parseMacroParameters(line)
     line.skipWhitespace()
     line.scanAssert("{", Span::Directive)
-    fullname = "#{line.name}(#{args.length})"
+    fullname = "#{line.name}(#{parameters.length})"
     if @macros[fullname]?
-      line.rewind()
+      line.rewind(m)
       line.fail "Duplicate definition of #{fullname}"
-    @macros[fullname] = new Macro(fullname, args)
+    @macros[fullname] = new Macro(fullname, parameters)
     if not @macros[line.name]? then @macros[line.name] = []
-    @macros[line.name].push(args.length)
+    @macros[line.name].push(parameters.length)
     @inMacro = fullname
 
-  parseMacroArgs: (line) ->
+  parseMacroParameters: (line) ->
     args = []
     if not line.scan("(", Span::Directive) then return []
     line.skipWhitespace()
@@ -503,6 +526,55 @@ class Parser
       line.skipWhitespace()
       if line.scan(",", Span::Directive) then line.skipWhitespace()
     line.fail "Expected )"
+
+  # expand a macro call, recursively parsing the nested lines
+  parseMacroCall: (line) ->
+    m = line.mark()
+    name = line.parseWord("Macro name", Span::Identifier)
+    line.skipWhitespace()
+    if line.scan("(", Span::Operator) then line.skipWhitespace()
+    args = @parseMacroArgs(line)
+    if @macros[name].indexOf(args.length) < 0
+      line.rewind(m)
+      line.fail "Macro '#{name}' requires #{@macros[name].join(' or ')} arguments"
+    macro = @macros["#{name}(#{args.length})"]
+
+    @debug "  macro expansion of #{name}(#{args.length}):"
+    newTextLines = for text in macro.textLines
+      # textual substitution, no fancy stuff.
+      for i in [0 ... args.length]
+        text = text.replace(macro.parameterMatchers[i], args[i])
+      @debug "  -- #{text}"
+      text
+    @debug "  --."
+
+    line.expanded = []
+    for text in newTextLines
+      xline = @parseLine(text)
+      if xline.directive?
+        line.rewind(m)
+        line.fail "Macros can't have directives in them"
+      if xline.expanded?
+        # nested macros are okay, but unpack them.
+        expanded = xline.expanded
+        delete xline.expanded
+        # if a macro was expanded on a line with a label, push the label by itself, so we remember it.
+        if xline.label? then line.expanded.push(xline)
+        for x in expanded then line.expanded.push(x)
+      else
+        line.expanded.push(xline)
+    @debug "  macro expansion of #{name}(#{args.length}) complete: #{line.toString()}"
+    line
+
+  # don't overthink this. we want literal text substitution.
+  parseMacroArgs: (line) ->
+    args = []
+    line.skipWhitespace()
+    while not line.finished()
+      if line.scan(")", Span::Operator) then return args
+      args.push(line.parseMacroArg())
+      if line.scan(",", Span::Operator) then line.skipWhitespace()
+    args
 
 
 exports.Line = Line

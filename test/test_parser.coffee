@@ -82,6 +82,9 @@ describe "Parser", ->
     it "throws an exception for unknown labels", ->
       e = parseExpression("cats + dogs")
       (-> e.evaluate(cats: 5)).should.throw(/resolve/)
+      e.dependency().should.equal("cats")
+      e.dependency(cats: 5).should.equal("dogs")
+      e.dependency(cats: 5, dogs: 10)?.should.equal(false)
       html.should.eql("{identifier:cats} {operator:+} {identifier:dogs}")
 
   describe "parseOperand", ->
@@ -184,31 +187,6 @@ describe "Parser", ->
       parseLine("#define happy 23").should.eql(".define happy 23")
       html.should.eql("{directive:#define} {identifier:happy} {number:23}")
 
-    it "parses a macro definition", ->
-      parser = new d16bunny.Parser(logger)
-      line = parser.parseLine("#macro swap(left, right) {")
-      line.toString().should.eql(".macro swap")
-      html = trimHtml(line.toHtml())
-      html.should.eql("{directive:#macro} {identifier:swap}{directive:(}{identifier:left}{directive:,} " +
-        "{identifier:right}{directive:)} {directive:{}")
-      # check that it's there
-      parser.macros["swap(2)"].name.should.eql("swap(2)")
-      parser.macros["swap(2)"].args.should.eql([ "left", "right" ])
-      # add lines
-      line1 = parser.parseLine("  set push, left")
-      line1.toString().should.eql("")
-      line2 = parser.parseLine("  set left, right")
-      line2.toString().should.eql("")
-      line3 = parser.parseLine("  set right, pop")
-      line3.toString().should.eql("")
-      line4 = parser.parseLine("}")
-      line4.toString().should.eql("")
-      parser.macros["swap(2)"].lines.should.eql([
-        "  set push, left",
-        "  set left, right",
-        "  set right, pop"
-      ])
-
     it "parses data", ->
       parser = new d16bunny.Parser(logger)
       line = parser.parseLine("dat 3, 9, '@', \"cat\", p\"cat\"")
@@ -234,3 +212,68 @@ describe "Parser", ->
       line.toString().should.eql(".org")
       line.data.map((x) => x.evaluate()).should.eql([ 3 ])
       trimHtml(line.toHtml()).should.eql("  {directive:org} {number:3}")
+
+  describe "parseLine macros", ->
+    it "parses a macro definition", ->
+      parser = new d16bunny.Parser(logger)
+      line = parser.parseLine("#macro swap(left, right) {")
+      line.toString().should.eql(".macro swap")
+      html = trimHtml(line.toHtml())
+      html.should.eql("{directive:#macro} {identifier:swap}{directive:(}{identifier:left}{directive:,} " +
+        "{identifier:right}{directive:)} {directive:{}")
+      # check that it's there
+      parser.macros["swap(2)"].name.should.eql("swap(2)")
+      parser.macros["swap(2)"].parameters.should.eql([ "left", "right" ])
+      # add lines
+      line1 = parser.parseLine("  set push, left")
+      line1.toString().should.eql("")
+      line2 = parser.parseLine("  set left, right")
+      line2.toString().should.eql("")
+      line3 = parser.parseLine("  set right, pop")
+      line3.toString().should.eql("")
+      line4 = parser.parseLine("}")
+      line4.toString().should.eql("")
+      parser.macros["swap(2)"].textLines.should.eql([
+        "  set push, left",
+        "  set left, right",
+        "  set right, pop"
+      ])
+
+    it "parses a macro call", ->
+      parser = new d16bunny.Parser(logger)
+      for x in [
+        "#macro swap(left, right) {"
+        "  set push, left"
+        "  set left, right"
+        "  set right, pop"
+        "}"
+      ] then parser.parseLine(x)
+      line = parser.parseLine("  swap(x, y)")
+      line.toString().should.eql("{ SET <24>, <3>; SET <3>, <4>; SET <4>, <24> }")
+      html = trimHtml(line.toHtml())
+      html.should.eql("  {identifier:swap}{operator:(}{string:x}{operator:,} {string:y}{operator:)}")
+
+    it "parses a nested macro call", ->
+      parser = new d16bunny.Parser(logger)
+      for x in [
+        "#macro save(r) {"
+        "  set push, r"
+        "}"
+      ] then parser.parseLine(x)
+      for x in [
+        "#macro restore(r) {"
+        "  set r, pop"
+        "}"
+      ] then parser.parseLine(x)
+      for x in [
+        "#macro swap(left, right) {"
+        "  save(left)"
+        "  set left, right"
+        "  restore(right)"
+        "}"
+      ] then parser.parseLine(x)
+      line = parser.parseLine("  swap(x, y)")
+      line.toString().should.eql("{ SET <24>, <3>; SET <3>, <4>; SET <4>, <24> }")
+      html = trimHtml(line.toHtml())
+      html.should.eql("  {identifier:swap}{operator:(}{string:x}{operator:,} {string:y}{operator:)}")
+
