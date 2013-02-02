@@ -41,7 +41,6 @@ class Line
       if @name? then " #{@name}" else ""
     ].join("") +
       @operands.map((x) => " " + x.toString()).join(",") +
-      @data.map((x) => x.toString()).join(", ") +
       if @expanded? then ("{ " + @expanded.map((x) => x.toString()) + " }") else ""
 
   # useful for unit tests
@@ -160,15 +159,37 @@ class Line
     word
 
 
+class Operand
+  # pos: where it is in the string
+  # code: 5-bit value for the operand in an opcode
+  # expr: (optional) an expression to be evaluated for the immediate
+  constructor: (@pos, @code, @expr) ->
 
+  toString: -> if @immediate then "<#{@code}, #{@immediate}>" else "<#{@code}>"
 
+  dependency: (symtab={}) ->
+    @expr?.dependency(symtab)
 
+  # attempt to resolve the expression in this operand. returns true on
+  # success, and sets:
+  #   - immediate: (optional) immediate value for this operand
+  resolve: (symtab) ->
+    # FIXME move to caller
+    #      @debug "  resolve operand: code=#{@code} expr=#{@expr.toString()}"
+    if not @expr? then return true
+    if @expr.dependency(symtab)? then return false
+    @immediate = @expr.evaluate(symtab) & 0xffff
+    delete @expr
 
-
+  # fit the immediate into a the operand code, if possible.
+  compact: ->
+    if @code == 0x1f and (@immediate == 0xffff or @immediate < 31)
+      @code = 0x20 + (if @immediate == 0xffff then 0x00 else (0x01 + @immediate))
+    delete @immediate
 
 
 class Macro
-  constructor: (@fullname, @args) ->
+  constructor: (@name, @args) ->
     @lines = []
 
 
@@ -224,12 +245,12 @@ class Parser
     if @inMacro
       if line.scan("}", Span::Directive)
         @inMacro = false
-
-    #   else
-    #     @macros[@inMacro].lines.push(text)
-    #   return line
+      else
+        @macros[@inMacro].lines.push(text)
+      return line
     if line.scan("#", Span::Directive) or line.scan(".", Span::Directive)
-      return line.parseDirective()
+      @parseDirective(line)
+      return line
 
     if line.scan(":", Span::Label)
       line.label = line.parseWord("Label", Span::Label)
@@ -248,6 +269,8 @@ class Parser
     if line.scan("=", Span::Operator)
       # special case "name = value"
       line.rewind(opStart)
+      line.spans.pop()
+      line.spans.pop()
       delete line.op
       line.directive = "define"
       line.name = line.parseWord("Constant name", Span::Identifier)
@@ -262,7 +285,16 @@ class Parser
     # FIXME make sure macros can't have directives.
 
     # if @macros[line.op] then return @parseMacroCall(line)
-    # if line.op == "dat" then return @parseData(line)
+    if line.op == "dat" then return @parseData(line)
+
+    if line.op == "org"
+      line.rewind(opStart)
+      line.spans.pop()
+      delete line.op
+      line.scan("org", Span::Directive)
+      line.directive = "org"
+      @parseOrgDirective(line)
+      return line
 
     # any other operation is assumed to take actual operands
     line.operands = []
@@ -272,6 +304,8 @@ class Parser
       if not line.finished() and line.scan(",", Span::Operator) then line.skipWhitespace()
 
     line
+
+  # ----- expressions
 
   parseExpression: (line, precedence = 0) ->
     line.skipWhitespace()
@@ -339,31 +373,6 @@ class Parser
 
   # ----- operands
 
-  class Operand
-    # pos: where it is in the string
-    # code: 5-bit value for the operand in an opcode
-    # expr: (optional) an expression to be evaluated for the immediate
-    constructor: (@pos, @code, @expr) ->
-
-    toString: -> if @immediate then "<#{@code}, #{@immediate}>" else "<#{@code}>"
-
-    # attempt to resolve the expression in this operand. returns true on
-    # success, and sets:
-    #   - immediate: (optional) immediate value for this operand
-    resolve: (symtab) ->
-      # FIXME move to caller
-      #      @debug "  resolve operand: code=#{@code} expr=#{@expr.toString()}"
-      if not @expr? then return true
-      if not @expr.resolvable(symtab) then return false
-      @immediate = @expr.evaluate(symtab) & 0xffff
-      delete @expr
-
-    # fit the immediate into a the operand code, if possible.
-    compact: ->
-      if @code == 0x1f and (@immediate == 0xffff or @immediate < 31)
-        @code = 0x20 + (if @immediate == 0xffff then 0x00 else (0x01 + @immediate))
-      delete @immediate
-
   # parse an operand expression.
   # if 'destination' is set, then the operand is in the destination slot
   # (which determines whether it uses "push" or "pop").
@@ -410,15 +419,44 @@ class Parser
 
   # ----- data
 
+  # read a list of data objects, which could each be an expression or a string.
+  parseData: (line) ->
+    line.data = []
+    while not line.finished()
+      start = line.pos
+      if line.scanAhead('"')
+        s = line.parseString()
+        line.data.push(Expression::Literal(line.text, start, s.charCodeAt(i))) for i in [0 ... s.length]
+      else if line.scanAhead('p"') or line.scanAhead('r"')
+        if line.scan("r", Span::String)
+          rom = true
+        else
+          line.scan("p", Span::String)
+        s = line.parseString()
+        word = 0
+        inWord = false
+        for i in [0 ... s.length]
+          ch = s.charCodeAt(i)
+          if rom and i == s.length - 1 then ch |= 0x80
+          if inWord then line.data.push(Expression::Literal(line.text, start, word | ch)) else (word = ch << 8)
+          inWord = not inWord
+        if inWord then line.data.push(Expression::Literal(line.text, start, word))
+      else
+        line.data.push(@parseExpression(line))
+      line.skipWhitespace()
+      if line.scan(",", Span::Operator) then line.skipWhitespace()
+    line
+
+  # FIXME: test data line with unresolved expression
 
   # ----- directives
 
   # a directive starts with "#" or "."
   parseDirective: (line) ->
     start = line.pos
-    line.directive = line.parseWord("Directive")
+    line.directive = line.parseWord("Directive", Span::Directive)
     line.skipWhitespace()
-    switch directive
+    switch line.directive
       when "macro" then @parseMacroDirective(line)
       when "define", "equ" then @parseDefineDirective(line)
       when "org" then @parseOrgDirective(line)
@@ -427,26 +465,32 @@ class Parser
         line.fail "Unknown directive: #{directive}"
 
   parseDefineDirective: (line) ->
-    line.name = @parseWord("Definition name")
+    line.name = line.parseWord("Definition name")
     line.skipWhitespace()
-    line.operands.push = @parseExpression()
+    line.operands.push @parseExpression(line)
     line.skipWhitespace()
     if not line.finished() then @fail "Unexpected content after definition"
 
-  parseMacroDefinition: (line) ->
+  parseOrgDirective: (line) ->
+    line.skipWhitespace()
+    line.data.push(@parseExpression(line))
+    line.skipWhitespace()
+    if not line.finished() then @fail "Unexpected content after origin"
+
+  parseMacroDirective: (line) ->
     line.setMark()
-    name = line.parseWord("Macro name")
+    line.name = line.parseWord("Macro name")
     line.skipWhitespace()
     args = @parseMacroArgs(line)
     line.skipWhitespace()
     line.scanAssert("{", Span::Directive)
-    fullname = "#{name}(#{args.length})"
+    fullname = "#{line.name}(#{args.length})"
     if @macros[fullname]?
       line.rewind()
       line.fail "Duplicate definition of #{fullname}"
     @macros[fullname] = new Macro(fullname, args)
-    if not @macros[name]? then @macros[name] = []
-    @macros[name].push(args.length)
+    if not @macros[line.name]? then @macros[line.name] = []
+    @macros[line.name].push(args.length)
     @inMacro = fullname
 
   parseMacroArgs: (line) ->
@@ -461,7 +505,6 @@ class Parser
     line.fail "Expected )"
 
 
-
-
 exports.Line = Line
+exports.Operand = Operand
 exports.Parser = Parser

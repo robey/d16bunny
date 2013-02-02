@@ -151,13 +151,12 @@ describe "Parser", ->
 
   describe "parseLine", ->
     html = ""
-    parser = null
 
     parseLine = (s) ->
       parser = new d16bunny.Parser(logger)
       line = parser.parseLine(s)
       html = trimHtml(line.toHtml())
-      for op in line.operands then op.resolve()
+      for op in line.operands then if op instanceof d16bunny.Operand then op.resolve()
       line.toString()
 
     it "parses comment lines", ->
@@ -178,10 +177,60 @@ describe "Parser", ->
       parseLine(":last set [a], ','").should.eql(":last SET <8>, <31, 44>")
 
     it "parses a definition with =", ->
-      parseLine("screen = 0x8000").should.eql(".define screen (32768)")
+      parseLine("screen = 0x8000").should.eql(".define screen 32768")
       html.should.eql("{identifier:screen} {operator:=} {number:0x8000}")
 
     it "parses a definition with #define", ->
-      a = new d16bunny.Assembler(logger)
-      parseLine("#define happy 23").should.eql(".define happy (23)")
+      parseLine("#define happy 23").should.eql(".define happy 23")
       html.should.eql("{directive:#define} {identifier:happy} {number:23}")
+
+    it "parses a macro definition", ->
+      parser = new d16bunny.Parser(logger)
+      line = parser.parseLine("#macro swap(left, right) {")
+      line.toString().should.eql(".macro swap")
+      html = trimHtml(line.toHtml())
+      html.should.eql("{directive:#macro} {identifier:swap}{directive:(}{identifier:left}{directive:,} " +
+        "{identifier:right}{directive:)} {directive:{}")
+      # check that it's there
+      parser.macros["swap(2)"].name.should.eql("swap(2)")
+      parser.macros["swap(2)"].args.should.eql([ "left", "right" ])
+      # add lines
+      line1 = parser.parseLine("  set push, left")
+      line1.toString().should.eql("")
+      line2 = parser.parseLine("  set left, right")
+      line2.toString().should.eql("")
+      line3 = parser.parseLine("  set right, pop")
+      line3.toString().should.eql("")
+      line4 = parser.parseLine("}")
+      line4.toString().should.eql("")
+      parser.macros["swap(2)"].lines.should.eql([
+        "  set push, left",
+        "  set left, right",
+        "  set right, pop"
+      ])
+
+    it "parses data", ->
+      parser = new d16bunny.Parser(logger)
+      line = parser.parseLine("dat 3, 9, '@', \"cat\", p\"cat\"")
+      line.toString().should.eql("DAT")
+      line.data.map((x) => x.evaluate()).should.eql([ 3, 9, 0x40, 0x63, 0x61, 0x74, 0x6361, 0x7400 ])
+      trimHtml(line.toHtml()).should.eql("{instruction:dat} {number:3}{operator:,} {number:9}{operator:,} " +
+        "{string:&#39;@&#39;}{operator:,} {string:&quot;cat&quot;}{operator:,} {string:p&quot;cat&quot;}")
+
+    it "parses rom strings", ->
+      parser = new d16bunny.Parser(logger)
+      line = parser.parseLine("dat r\"cat\"")
+      line.toString().should.eql("DAT")
+      line.data.map((x) => x.evaluate()).should.eql([ 0x6361, 0xf400 ])
+      trimHtml(line.toHtml()).should.eql("{instruction:dat} {string:r&quot;cat&quot;}")
+
+    it "parses org changes", ->
+      parser = new d16bunny.Parser(logger)
+      line = parser.parseLine(".org 0x1000")
+      line.toString().should.eql(".org")
+      line.data.map((x) => x.evaluate()).should.eql([ 4096 ])
+      trimHtml(line.toHtml()).should.eql("{directive:.org} {number:0x1000}")
+      line = parser.parseLine("  org 3")
+      line.toString().should.eql(".org")
+      line.data.map((x) => x.evaluate()).should.eql([ 3 ])
+      trimHtml(line.toHtml()).should.eql("  {directive:org} {number:3}")

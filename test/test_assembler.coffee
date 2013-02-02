@@ -5,39 +5,6 @@ logger = (lineno, pos, message) ->
 
 describe "Assemble.parseLine", ->
 
-  it "parses a definition with =", ->
-    a = new d16bunny.Assembler(logger)
-    x = a.parseLine("screen = 0x8000")
-    x.label?.should.equal(false)
-    x.op?.should.equal(false)
-    a.symtab.should.eql(screen: 0x8000)
-
-  it "parses a definition with #define", ->
-    a = new d16bunny.Assembler(logger)
-    x = a.parseLine("#define happy 23")
-    a.symtab.should.eql(happy: 23)
-
-  it "parses a macro definition", ->
-    a = new d16bunny.Assembler(logger)
-    x = a.parseLine("#macro swap(left, right) {")
-    x.op?.should.equal(false)
-    a.macros["swap(2)"].name.should.eql("swap(2)")
-    a.macros["swap(2)"].params.should.eql([ "left", "right" ])
-    x = a.parseLine("  set push, left")
-    x.op?.should.equal(false)
-    x = a.parseLine("  set left, right")
-    x.op?.should.equal(false)
-    x = a.parseLine("  set right, pop")
-    x.op?.should.equal(false)
-    x = a.parseLine("}")
-    x.op?.should.equal(false)
-    a.inMacro.should.equal(false)
-    a.macros["swap(2)"].lines.should.eql([
-      "  set push, left",
-      "  set left, right",
-      "  set right, pop"
-    ])
-
   it "parses data", ->
     a = new d16bunny.Assembler(logger)
     line = a.parseLine("dat 3, 9, '@', \"cat\", p\"cat\"")
