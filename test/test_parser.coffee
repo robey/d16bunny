@@ -178,19 +178,35 @@ describe "Parser", ->
       parseLine(":last set [a], ','").should.eql(":last SET <8>, <31, 44>")
 
     it "parses a definition with =", ->
-      parseLine("screen = 0x8000").should.eql(".define screen 32768")
+      parser = new d16bunny.Parser()
+      line = parser.parseLine("screen = 0x8000")
+      line.toString().should.eql(".define screen")
+      line.data.map((x) => x.evaluate()).should.eql([ 32768 ])
+      html = trimHtml(line.toHtml())
       html.should.eql("{identifier:screen} {operator:=} {number:0x8000}")
 
     it "parses a definition with #define", ->
-      parseLine("#define happy 23").should.eql(".define happy 23")
+      parser = new d16bunny.Parser()
+      line = parser.parseLine("#define happy 23")
+      line.toString().should.eql(".define happy")
+      line.data.map((x) => x.evaluate()).should.eql([ 23 ])
+      html = trimHtml(line.toHtml())
       html.should.eql("{directive:#define} {identifier:happy} {number:23}")
 
     it "parses a definition with .equ", ->
-      parseLine(".equ happy 23").should.eql(".define happy 23")
+      parser = new d16bunny.Parser()
+      line = parser.parseLine(".equ happy 23")
+      line.toString().should.eql(".define happy")
+      line.data.map((x) => x.evaluate()).should.eql([ 23 ])
+      html = trimHtml(line.toHtml())
       html.should.eql("{directive:.equ} {identifier:happy} {number:23}")
 
     it "parses a definition with equ", ->
-      parseLine(":happy equ 23").should.eql(".define happy 23")
+      parser = new d16bunny.Parser()
+      line = parser.parseLine(":happy equ 23")
+      line.toString().should.eql(".define happy")
+      line.data.map((x) => x.evaluate()).should.eql([ 23 ])
+      html = trimHtml(line.toHtml())
       html.should.eql("{label::happy} {directive:equ} {number:23}")
 
     it "parses data", ->
@@ -212,11 +228,11 @@ describe "Parser", ->
       parser = new d16bunny.Parser()
       line = parser.parseLine(".org 0x1000")
       line.toString().should.eql(".org")
-      line.data.map((x) => x.evaluate()).should.eql([ 4096 ])
+      line.data.should.eql([ 4096 ])
       trimHtml(line.toHtml()).should.eql("{directive:.org} {number:0x1000}")
       line = parser.parseLine("  org 3")
       line.toString().should.eql(".org")
-      line.data.map((x) => x.evaluate()).should.eql([ 3 ])
+      line.data.should.eql([ 3 ])
       trimHtml(line.toHtml()).should.eql("  {directive:org} {number:3}")
 
   describe "parseLine macros", ->

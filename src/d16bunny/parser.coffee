@@ -26,6 +26,7 @@ class Line
     # things parsed out:
     @label = null       # label (if any)
     @op = null          # operation (if any)
+    @opPos = 0          # position of operation in text
     @directive = null   # directive, if this is a directive instead.
     @name = null        # name (if a constant is being defined)
     @operands = []      # array of expressions
@@ -188,6 +189,8 @@ class Operand
   # pos: where it is in the string
   # code: 5-bit value for the operand in an opcode
   # expr: (optional) an expression to be evaluated for the immediate
+  # immediate: (optional) a resolved 16-bit immediate
+  # (only one of 'expr' or 'immediate' will ever be set)
   constructor: (@pos, @code, @expr) ->
 
   toString: -> if @immediate then "<#{@code}, #{@immediate}>" else "<#{@code}>"
@@ -210,7 +213,10 @@ class Operand
   compact: ->
     if @code == 0x1f and (@immediate == 0xffff or @immediate < 31)
       @code = 0x20 + (if @immediate == 0xffff then 0x00 else (0x01 + @immediate))
-    delete @immediate
+      delete @immediate
+      true
+    else
+      false
 
 
 class Macro
@@ -261,8 +267,9 @@ class Parser
     @debugger(slist.join(""))
 
   # returns a Line object, with syntax parsed out
-  parseLine: (text) ->
+  parseLine: (text, lineNumber = 0) ->
     line = new Line(text)
+    line.lineNumber = lineNumber
     line.skipWhitespace()
     if line.finished() then return line
 
@@ -285,17 +292,17 @@ class Parser
       line.skipWhitespace()
     return line if line.finished()
 
-    opStart = line.mark()
+    line.opPos = line.mark()
     line.op = line.parseWord("Operation name", Span::Instruction)
 
     if @macros[line.op]
-      line.rewind(opStart)
+      line.rewind(line.opPos)
       delete line.op
       return @parseMacroCall(line)
 
     if line.op == "equ"
       # allow ":label equ <val>" for windows people
-      line.rewind(opStart)
+      line.rewind(line.opPos)
       if not line.label?
         line.fail "EQU must be a directive or on a line with a label"
       line.directive = "define"
@@ -304,7 +311,7 @@ class Parser
       delete line.op
       line.scan("equ", Span::Directive)
       line.skipWhitespace()
-      line.operands.push @parseExpression(line)
+      line.data.push @parseExpression(line)
       line.skipWhitespace()
       if not line.finished() then line.fail "Unexpected content after definition"
       return line
@@ -312,7 +319,7 @@ class Parser
     if line.op == "dat" then return @parseData(line)
 
     if line.op == "org"
-      line.rewind(opStart)
+      line.rewind(line.opPos)
       delete line.op
       line.scan("org", Span::Directive)
       line.directive = "org"
@@ -322,14 +329,14 @@ class Parser
     line.skipWhitespace()
     if line.scan("=", Span::Operator)
       # special case "name = value"
-      line.rewind(opStart)
+      line.rewind(line.opPos)
       delete line.op
       line.directive = "define"
       line.name = line.parseWord("Constant name", Span::Identifier)
       line.skipWhitespace()
       line.scan("=", Span::Operator)
       line.skipWhitespace()
-      line.operands.push @parseExpression(line)
+      line.data.push @parseExpression(line)
       line.skipWhitespace()
       if not line.finished() then line.fail "Unexpected content after definition"
       return line
@@ -504,13 +511,13 @@ class Parser
     line.directive = "define"
     line.name = line.parseWord("Definition name")
     line.skipWhitespace()
-    line.operands.push @parseExpression(line)
+    line.data.push @parseExpression(line)
     line.skipWhitespace()
     if not line.finished() then @fail "Unexpected content after definition"
 
   parseOrgDirective: (line) ->
     line.skipWhitespace()
-    line.data.push(@parseExpression(line))
+    line.data.push(@parseExpression(line).evaluate())
     line.skipWhitespace()
     if not line.finished() then @fail "Unexpected content after origin"
 
@@ -577,7 +584,7 @@ class Parser
         for x in expanded then line.expanded.push(x)
       else
         line.expanded.push(xline)
-    @debug "  macro expansion of #{name}(#{args.length}) complete: #{line.toString()}"
+    @debug "  macro expansion of #{name}(#{args.length}) complete: #{line.expanded.length} lines"
     line
 
   # don't overthink this. we want literal text substitution.
