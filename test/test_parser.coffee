@@ -3,8 +3,6 @@ d16bunny = require '../src/d16bunny'
 
 pp = require('../src/d16bunny/prettyprint').prettyPrinter
 
-logger = (lineno, pos, message) ->
-
 trimHtml = (html) ->
   # try to reign in the html for testing
   html = html.replace(/<span class="syntax-([\w\-]+)">/g, "{$1:")
@@ -32,7 +30,7 @@ describe "Parser", ->
     html = ""
 
     parseExpression = (s) ->
-      p = new d16bunny.Parser(logger)
+      p = new d16bunny.Parser()
       line = new d16bunny.Line(s)
       e = p.parseExpression(line)
       html = trimHtml(line.toHtml())
@@ -91,7 +89,7 @@ describe "Parser", ->
     html = ""
 
     parseOperand = (s, symtab={}, destination=false) ->
-      p = new d16bunny.Parser(logger)
+      p = new d16bunny.Parser()
       line = new d16bunny.Line(s)
       x = p.parseOperand(line, destination)
       x.resolve(symtab)
@@ -156,7 +154,7 @@ describe "Parser", ->
     html = ""
 
     parseLine = (s) ->
-      parser = new d16bunny.Parser(logger)
+      parser = new d16bunny.Parser()
       line = parser.parseLine(s)
       html = trimHtml(line.toHtml())
       for op in line.operands then if op instanceof d16bunny.Operand then op.resolve()
@@ -187,8 +185,16 @@ describe "Parser", ->
       parseLine("#define happy 23").should.eql(".define happy 23")
       html.should.eql("{directive:#define} {identifier:happy} {number:23}")
 
+    it "parses a definition with .equ", ->
+      parseLine(".equ happy 23").should.eql(".define happy 23")
+      html.should.eql("{directive:.equ} {identifier:happy} {number:23}")
+
+    it "parses a definition with equ", ->
+      parseLine(":happy equ 23").should.eql(".define happy 23")
+      html.should.eql("{label::happy} {directive:equ} {number:23}")
+
     it "parses data", ->
-      parser = new d16bunny.Parser(logger)
+      parser = new d16bunny.Parser()
       line = parser.parseLine("dat 3, 9, '@', \"cat\", p\"cat\"")
       line.toString().should.eql("DAT")
       line.data.map((x) => x.evaluate()).should.eql([ 3, 9, 0x40, 0x63, 0x61, 0x74, 0x6361, 0x7400 ])
@@ -196,14 +202,14 @@ describe "Parser", ->
         "{string:&#39;@&#39;}{operator:,} {string:&quot;cat&quot;}{operator:,} {string:p&quot;cat&quot;}")
 
     it "parses rom strings", ->
-      parser = new d16bunny.Parser(logger)
+      parser = new d16bunny.Parser()
       line = parser.parseLine("dat r\"cat\"")
       line.toString().should.eql("DAT")
       line.data.map((x) => x.evaluate()).should.eql([ 0x6361, 0xf400 ])
       trimHtml(line.toHtml()).should.eql("{instruction:dat} {string:r&quot;cat&quot;}")
 
     it "parses org changes", ->
-      parser = new d16bunny.Parser(logger)
+      parser = new d16bunny.Parser()
       line = parser.parseLine(".org 0x1000")
       line.toString().should.eql(".org")
       line.data.map((x) => x.evaluate()).should.eql([ 4096 ])
@@ -215,7 +221,7 @@ describe "Parser", ->
 
   describe "parseLine macros", ->
     it "parses a macro definition", ->
-      parser = new d16bunny.Parser(logger)
+      parser = new d16bunny.Parser()
       line = parser.parseLine("#macro swap(left, right) {")
       line.toString().should.eql(".macro swap")
       html = trimHtml(line.toHtml())
@@ -240,7 +246,7 @@ describe "Parser", ->
       ])
 
     it "parses a macro call", ->
-      parser = new d16bunny.Parser(logger)
+      parser = new d16bunny.Parser()
       for x in [
         "#macro swap(left, right) {"
         "  set push, left"
@@ -254,7 +260,7 @@ describe "Parser", ->
       html.should.eql("  {identifier:swap}{operator:(}{string:x}{operator:,} {string:y}{operator:)}")
 
     it "parses a nested macro call", ->
-      parser = new d16bunny.Parser(logger)
+      parser = new d16bunny.Parser()
       for x in [
         "#macro save(r) {"
         "  set push, r"

@@ -244,15 +244,13 @@ class Parser
     '^' : 6
     '|' : 5
 
-  constructor: (@logger) ->
+  constructor: ->
     @reset()
 
   reset: ->
     @macros = {}
     @inMacro = null    # if waiting for an "}"
     @lastLabel = null  # for resolving relative labels
-    # when evaluating macros, this holds the current parameter set:
-    @vars = {}
 
   debug: (list...) ->
     unless @debugger? then return
@@ -295,6 +293,22 @@ class Parser
       delete line.op
       return @parseMacroCall(line)
 
+    if line.op == "equ"
+      # allow ":label equ <val>" for windows people
+      line.rewind(opStart)
+      if not line.label?
+        line.fail "EQU must be a directive or on a line with a label"
+      line.directive = "define"
+      line.name = line.label
+      delete line.label
+      delete line.op
+      line.scan("equ", Span::Directive)
+      line.skipWhitespace()
+      line.operands.push @parseExpression(line)
+      line.skipWhitespace()
+      if not line.finished() then line.fail "Unexpected content after definition"
+      return line
+
     if line.op == "dat" then return @parseData(line)
 
     if line.op == "org"
@@ -321,7 +335,6 @@ class Parser
       return line
 
     # any other operation is assumed to take actual operands
-    if @vars[line.op] then line.op = @vars[line.op]
     line.operands = []
     while not line.finished()
       line.operands.push(@parseOperand(line, line.operands.length == 0))
@@ -488,6 +501,7 @@ class Parser
         line.fail "Unknown directive: #{directive}"
 
   parseDefineDirective: (line) ->
+    line.directive = "define"
     line.name = line.parseWord("Definition name")
     line.skipWhitespace()
     line.operands.push @parseExpression(line)
