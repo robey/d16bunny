@@ -9,6 +9,13 @@ trimHtml = (html) ->
   html = html.replace(/<\/span>/g, "}")
   html
 
+parseLine = (s) ->
+  parser = new d16bunny.Parser()
+  pline = parser.parseLine(s)
+  html = trimHtml(pline.toHtml())
+  for op in pline.operands then if op instanceof d16bunny.Operand then op.resolve()
+  [ pline, html ]
+
 describe "Parser", ->
   it "unquotes chars", ->
     line = new d16bunny.Line("x")
@@ -151,96 +158,82 @@ describe "Parser", ->
       (-> parseOperand("pop", {}, true)).should.throw(/can't use POP/)
 
   describe "parseLine", ->
-    html = ""
-
-    parseLine = (s) ->
-      parser = new d16bunny.Parser()
-      line = parser.parseLine(s)
-      html = trimHtml(line.toHtml())
-      for op in line.operands then if op instanceof d16bunny.Operand then op.resolve()
-      line.toString()
-
     it "parses comment lines", ->
-      parseLine("; comment.").should.eql("")
+      [ pline, html ] = parseLine("; comment.")
+      pline.toString().should.eql("")
       html.should.eql("{comment:; comment.}")
 
     it "parses a single op", ->
-      parseLine("  nop").should.eql("NOP")
+      [ pline, html ] = parseLine("  nop")
+      pline.toString().should.eql("NOP")
       html.should.eql("  {instruction:nop}")
 
     it "parses a labeled line", ->
-      parseLine(":start").should.eql(":start ")
+      [ pline, html ] = parseLine(":start")
+      pline.toString().should.eql(":start ")
       html.should.eql("{label::start}")
-      parseLine(":start  nop").should.eql(":start NOP")
+      [ pline, html ] = parseLine(":start  nop")
+      pline.toString().should.eql(":start NOP")
       html.should.eql("{label::start}  {instruction:nop}")
 
     it "parses a line with operands", ->
-      parseLine(":last set [a], ','").should.eql(":last SET <8>, <31, 44>")
+      [ pline, html ] = parseLine(":last set [a], ','")
+      pline.toString().should.eql(":last SET <8>, <31, 44>")
+      html.should.eql("{label::last} {instruction:set} {operator:[}{register:a}{operator:],} {string:&#39;,&#39;}")
 
     it "parses a definition with =", ->
-      parser = new d16bunny.Parser()
-      line = parser.parseLine("screen = 0x8000")
-      line.toString().should.eql(".define screen")
-      line.data.map((x) => x.evaluate()).should.eql([ 32768 ])
-      html = trimHtml(line.toHtml())
+      [ pline, html ] = parseLine("screen = 0x8000")
+      pline.toString().should.eql(".define screen")
+      pline.data.map((x) => x.evaluate()).should.eql([ 32768 ])
       html.should.eql("{identifier:screen} {operator:=} {number:0x8000}")
 
     it "parses a definition with #define", ->
-      parser = new d16bunny.Parser()
-      line = parser.parseLine("#define happy 23")
-      line.toString().should.eql(".define happy")
-      line.data.map((x) => x.evaluate()).should.eql([ 23 ])
-      html = trimHtml(line.toHtml())
+      [ pline, html ] = parseLine("#define happy 23")
+      pline.toString().should.eql(".define happy")
+      pline.data.map((x) => x.evaluate()).should.eql([ 23 ])
       html.should.eql("{directive:#define} {identifier:happy} {number:23}")
 
     it "parses a definition with .equ", ->
-      parser = new d16bunny.Parser()
-      line = parser.parseLine(".equ happy 23")
-      line.toString().should.eql(".define happy")
-      line.data.map((x) => x.evaluate()).should.eql([ 23 ])
-      html = trimHtml(line.toHtml())
+      [ pline, html ] = parseLine(".equ happy 23")
+      pline.toString().should.eql(".define happy")
+      pline.data.map((x) => x.evaluate()).should.eql([ 23 ])
       html.should.eql("{directive:.equ} {identifier:happy} {number:23}")
 
     it "parses a definition with equ", ->
-      parser = new d16bunny.Parser()
-      line = parser.parseLine(":happy equ 23")
-      line.toString().should.eql(".define happy")
-      line.data.map((x) => x.evaluate()).should.eql([ 23 ])
-      html = trimHtml(line.toHtml())
+      [ pline, html ] = parseLine(":happy equ 23")
+      pline.toString().should.eql(".define happy")
+      pline.data.map((x) => x.evaluate()).should.eql([ 23 ])
       html.should.eql("{label::happy} {directive:equ} {number:23}")
 
     it "parses data", ->
-      parser = new d16bunny.Parser()
-      line = parser.parseLine("dat 3, 9, '@', \"cat\", p\"cat\"")
-      line.toString().should.eql("DAT")
-      line.data.map((x) => x.evaluate()).should.eql([ 3, 9, 0x40, 0x63, 0x61, 0x74, 0x6361, 0x7400 ])
-      trimHtml(line.toHtml()).should.eql("{instruction:dat} {number:3}{operator:,} {number:9}{operator:,} " +
+      [ pline, html ] = parseLine("dat 3, 9, '@', \"cat\", p\"cat\"")
+      pline.toString().should.eql("DAT")
+      pline.data.map((x) => x.evaluate()).should.eql([ 3, 9, 0x40, 0x63, 0x61, 0x74, 0x6361, 0x7400 ])
+      html.should.eql("{instruction:dat} {number:3}{operator:,} {number:9}{operator:,} " +
         "{string:&#39;@&#39;}{operator:,} {string:&quot;cat&quot;}{operator:,} {string:p&quot;cat&quot;}")
 
     it "parses rom strings", ->
-      parser = new d16bunny.Parser()
-      line = parser.parseLine("dat r\"cat\"")
-      line.toString().should.eql("DAT")
-      line.data.map((x) => x.evaluate()).should.eql([ 0x6361, 0xf400 ])
-      trimHtml(line.toHtml()).should.eql("{instruction:dat} {string:r&quot;cat&quot;}")
+      [ pline, html ] = parseLine("dat r\"cat\"")
+      pline.toString().should.eql("DAT")
+      pline.data.map((x) => x.evaluate()).should.eql([ 0x6361, 0xf400 ])
+      html.should.eql("{instruction:dat} {string:r&quot;cat&quot;}")
 
     it "parses org changes", ->
-      parser = new d16bunny.Parser()
-      line = parser.parseLine(".org 0x1000")
-      line.toString().should.eql(".org")
-      line.data.should.eql([ 4096 ])
-      trimHtml(line.toHtml()).should.eql("{directive:.org} {number:0x1000}")
-      line = parser.parseLine("  org 3")
-      line.toString().should.eql(".org")
-      line.data.should.eql([ 3 ])
-      trimHtml(line.toHtml()).should.eql("  {directive:org} {number:3}")
+      [ pline, html ] = parseLine(".org 0x1000")
+      pline.toString().should.eql(".org")
+      pline.data.should.eql([ 4096 ])
+      html.should.eql("{directive:.org} {number:0x1000}")
+      [ pline, html ] = parseLine("  org 3")
+      pline.toString().should.eql(".org")
+      pline.data.should.eql([ 3 ])
+      html.should.eql("  {directive:org} {number:3}")
 
   describe "parseLine macros", ->
     it "parses a macro definition", ->
       parser = new d16bunny.Parser()
-      line = parser.parseLine("#macro swap(left, right) {")
-      line.toString().should.eql(".macro swap")
-      html = trimHtml(line.toHtml())
+      pline = parser.parseLine("#macro swap(left, right) {")
+      pline.toString().should.eql(".macro swap")
+      html = trimHtml(pline.toHtml())
       html.should.eql("{directive:#macro} {identifier:swap}{directive:(}{identifier:left}{directive:,} " +
         "{identifier:right}{directive:)} {directive:{}")
       # check that it's there

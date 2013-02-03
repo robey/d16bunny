@@ -19,30 +19,12 @@ class Span
   constructor: (@type, @start, @end) ->
 
 
+# for parsing a line of text, and syntax highlighting
 class Line
   constructor: (@text) ->
     @pos = 0            # current index within text
     @end = @text.length # parsing should not continue past end
-    # things parsed out:
-    @label = null       # label (if any)
-    @op = null          # operation (if any)
-    @opPos = 0          # position of operation in text
-    @directive = null   # directive, if this is a directive instead.
-    @name = null        # name (if a constant is being defined)
-    @operands = []      # array of expressions
-    @data = []          # array of expressions, if this is a line of raw data
-    @expanded = null    # list of other Line objects, if this is an expanded macro
     @spans = []         # spans for syntax highlighting
-
-  toString: ->
-    [
-      if @label? then ":#{@label} " else ""
-      if @op? then @op.toUpperCase() else ""
-      if @directive? then ".#{@directive}" else ""
-      if @name? then " #{@name}" else ""
-    ].join("") +
-      @operands.map((x) => " " + x.toString()).join(",") +
-      if @expanded? then ("{" + @expanded.map((x) => " " + x.toString()).join(";") + " }") else ""
 
   # useful for unit tests
   setText: (text) ->
@@ -185,6 +167,31 @@ class Line
     rv
 
 
+# things parsed out of a Line
+class ParsedLine
+  constructor: (@line) ->
+    @label = null       # label (if any)
+    @op = null          # operation (if any)
+    @opPos = 0          # position of operation in text
+    @directive = null   # directive, if this is a directive instead.
+    @name = null        # name (if a constant is being defined)
+    @operands = []      # array of expressions
+    @data = []          # array of expressions, if this is a line of raw data
+    @expanded = null    # list of other Line objects, if this is an expanded macro
+
+  toString: ->
+    [
+      if @label? then ":#{@label} " else ""
+      if @op? then @op.toUpperCase() else ""
+      if @directive? then ".#{@directive}" else ""
+      if @name? then " #{@name}" else ""
+    ].join("") +
+      @operands.map((x) => " " + x.toString()).join(",") +
+      if @expanded? then ("{" + @expanded.map((x) => " " + x.toString()).join(";") + " }") else ""
+
+  toHtml: -> @line.toHtml()
+
+
 class Operand
   # pos: where it is in the string
   # code: 5-bit value for the operand in an opcode
@@ -269,86 +276,89 @@ class Parser
   # returns a Line object, with syntax parsed out
   parseLine: (text, lineNumber = 0) ->
     line = new Line(text)
-    line.lineNumber = lineNumber
+    pline = new ParsedLine(line)
+    pline.lineNumber = lineNumber
     line.skipWhitespace()
-    if line.finished() then return line
+    if line.finished() then return pline
 
     if @inMacro
       if line.scan("}", Span::Directive)
         @inMacro = false
       else
         @macros[@inMacro].textLines.push(text)
-      return line
+      return pline
     if line.scan("#", Span::Directive) or line.scan(".", Span::Directive)
-      @parseDirective(line)
-      return line
+      @parseDirective(line, pline)
+      return pline
 
     if line.scan(":", Span::Label)
-      line.label = line.parseWord("Label", Span::Label)
-      if line.label[0] == "."
-        if @lastLabel? then line.label = @lastLabel + line.label
+      pline.label = line.parseWord("Label", Span::Label)
+      if pline.label[0] == "."
+        if @lastLabel? then pline.label = @lastLabel + pline.label
       else
-        @lastLabel = line.label
+        @lastLabel = pline.label
       line.skipWhitespace()
-    return line if line.finished()
+    return pline if line.finished()
 
-    line.opPos = line.mark()
-    line.op = line.parseWord("Operation name", Span::Instruction)
+    pline.opPos = line.mark()
+    pline.op = line.parseWord("Operation name", Span::Instruction)
 
-    if @macros[line.op]
-      line.rewind(line.opPos)
-      delete line.op
-      return @parseMacroCall(line)
+    if @macros[pline.op]
+      line.rewind(pline.opPos)
+      delete pline.op
+      return @parseMacroCall(line, pline)
 
-    if line.op == "equ"
+    if pline.op == "equ"
       # allow ":label equ <val>" for windows people
-      line.rewind(line.opPos)
-      if not line.label?
+      line.rewind(pline.opPos)
+      if not pline.label?
         line.fail "EQU must be a directive or on a line with a label"
-      line.directive = "define"
-      line.name = line.label
-      delete line.label
-      delete line.op
+      pline.directive = "define"
+      pline.name = pline.label
+      delete pline.label
+      delete pline.op
       line.scan("equ", Span::Directive)
       line.skipWhitespace()
-      line.data.push @parseExpression(line)
+      pline.data.push @parseExpression(line)
       line.skipWhitespace()
       if not line.finished() then line.fail "Unexpected content after definition"
-      return line
+      return pline
 
-    if line.op == "dat" then return @parseData(line)
+    if pline.op == "dat"
+      @parseData(line, pline)
+      return pline
 
-    if line.op == "org"
-      line.rewind(line.opPos)
-      delete line.op
+    if pline.op == "org"
+      line.rewind(pline.opPos)
+      delete pline.op
       line.scan("org", Span::Directive)
-      line.directive = "org"
-      @parseOrgDirective(line)
-      return line
+      pline.directive = "org"
+      @parseOrgDirective(line, pline)
+      return pline
 
     line.skipWhitespace()
     if line.scan("=", Span::Operator)
       # special case "name = value"
-      line.rewind(line.opPos)
-      delete line.op
-      line.directive = "define"
-      line.name = line.parseWord("Constant name", Span::Identifier)
+      line.rewind(pline.opPos)
+      delete pline.op
+      pline.directive = "define"
+      pline.name = line.parseWord("Constant name", Span::Identifier)
       line.skipWhitespace()
       line.scan("=", Span::Operator)
       line.skipWhitespace()
-      line.data.push @parseExpression(line)
+      pline.data.push @parseExpression(line)
       line.skipWhitespace()
       if not line.finished() then line.fail "Unexpected content after definition"
-      return line
+      return pline
 
     # any other operation is assumed to take actual operands
-    line.operands = []
+    pline.operands = []
     while not line.finished()
-      line.operands.push(@parseOperand(line, line.operands.length == 0))
+      pline.operands.push(@parseOperand(line, pline.operands.length == 0))
       line.skipWhitespace()
       if not line.finished() and line.scan(",", Span::Operator) then line.skipWhitespace()
 
-    line
+    pline
 
   # ----- expressions
 
@@ -462,14 +472,14 @@ class Parser
   # ----- data
 
   # read a list of data objects, which could each be an expression or a string.
-  parseData: (line) ->
-    line.data = []
+  parseData: (line, pline) ->
+    pline.data = []
     line.skipWhitespace()
     while not line.finished()
       m = line.mark()
       if line.scanAhead('"')
         s = line.parseString()
-        line.data.push(Expression::Literal(line.text, m.pos, s.charCodeAt(i))) for i in [0 ... s.length]
+        pline.data.push(Expression::Literal(line.text, m.pos, s.charCodeAt(i))) for i in [0 ... s.length]
       else if line.scanAhead('p"') or line.scanAhead('r"')
         if line.scan("r", Span::String)
           rom = true
@@ -481,60 +491,59 @@ class Parser
         for i in [0 ... s.length]
           ch = s.charCodeAt(i)
           if rom and i == s.length - 1 then ch |= 0x80
-          if inWord then line.data.push(Expression::Literal(line.text, m.pos, word | ch)) else (word = ch << 8)
+          if inWord then pline.data.push(Expression::Literal(line.text, m.pos, word | ch)) else (word = ch << 8)
           inWord = not inWord
-        if inWord then line.data.push(Expression::Literal(line.text, m.pos, word))
+        if inWord then pline.data.push(Expression::Literal(line.text, m.pos, word))
       else
-        line.data.push(@parseExpression(line))
+        pline.data.push(@parseExpression(line))
       line.skipWhitespace()
       if line.scan(",", Span::Operator) then line.skipWhitespace()
-    line
 
   # FIXME: test data line with unresolved expression
 
   # ----- directives
 
   # a directive starts with "#" or "."
-  parseDirective: (line) ->
+  parseDirective: (line, pline) ->
     m = line.mark()
-    line.directive = line.parseWord("Directive", Span::Directive)
+    pline.directive = line.parseWord("Directive", Span::Directive)
     line.skipWhitespace()
-    switch line.directive
-      when "macro" then @parseMacroDirective(line)
-      when "define", "equ" then @parseDefineDirective(line)
-      when "org" then @parseOrgDirective(line)
+    switch pline.directive
+      when "macro" then @parseMacroDirective(line, pline)
+      when "define", "equ" then @parseDefineDirective(line, pline)
+      when "org" then @parseOrgDirective(line, pline)
       else
         line.rewind(m)
         line.fail "Unknown directive: #{directive}"
 
-  parseDefineDirective: (line) ->
-    line.directive = "define"
-    line.name = line.parseWord("Definition name")
+  parseDefineDirective: (line, pline) ->
+    pline.directive = "define"
+    pline.name = line.parseWord("Definition name")
     line.skipWhitespace()
-    line.data.push @parseExpression(line)
+    pline.data.push @parseExpression(line)
     line.skipWhitespace()
     if not line.finished() then @fail "Unexpected content after definition"
 
-  parseOrgDirective: (line) ->
+  parseOrgDirective: (line, pline) ->
     line.skipWhitespace()
-    line.data.push(@parseExpression(line).evaluate())
+    pline.data.push(@parseExpression(line).evaluate())
     line.skipWhitespace()
     if not line.finished() then @fail "Unexpected content after origin"
 
-  parseMacroDirective: (line) ->
+  parseMacroDirective: (line, pline) ->
     m = line.mark()
-    line.name = line.parseWord("Macro name")
+    pline.name = line.parseWord("Macro name")
     line.skipWhitespace()
     parameters = @parseMacroParameters(line)
     line.skipWhitespace()
     line.scanAssert("{", Span::Directive)
-    fullname = "#{line.name}(#{parameters.length})"
+    fullname = "#{pline.name}(#{parameters.length})"
     if @macros[fullname]?
       line.rewind(m)
       line.fail "Duplicate definition of #{fullname}"
     @macros[fullname] = new Macro(fullname, parameters)
-    if not @macros[line.name]? then @macros[line.name] = []
-    @macros[line.name].push(parameters.length)
+    if not @macros[line.name]? then @macros[pline.name] = []
+    @macros[pline.name].push(parameters.length)
     @inMacro = fullname
 
   parseMacroParameters: (line) ->
@@ -549,7 +558,7 @@ class Parser
     line.fail "Expected )"
 
   # expand a macro call, recursively parsing the nested lines
-  parseMacroCall: (line) ->
+  parseMacroCall: (line, pline) ->
     m = line.mark()
     name = line.parseWord("Macro name", Span::Identifier)
     line.skipWhitespace()
@@ -569,7 +578,7 @@ class Parser
       text
     @debug "  --."
 
-    line.expanded = []
+    pline.expanded = []
     for text in newTextLines
       xline = @parseLine(text)
       if xline.directive?
@@ -580,12 +589,12 @@ class Parser
         expanded = xline.expanded
         delete xline.expanded
         # if a macro was expanded on a line with a label, push the label by itself, so we remember it.
-        if xline.label? then line.expanded.push(xline)
-        for x in expanded then line.expanded.push(x)
+        if xline.label? then pline.expanded.push(xline)
+        for x in expanded then pline.expanded.push(x)
       else
-        line.expanded.push(xline)
-    @debug "  macro expansion of #{name}(#{args.length}) complete: #{line.expanded.length} lines"
-    line
+        pline.expanded.push(xline)
+    @debug "  macro expansion of #{name}(#{args.length}) complete: #{pline.expanded.length} lines"
+    pline
 
   # don't overthink this. we want literal text substitution.
   parseMacroArgs: (line) ->
