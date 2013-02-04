@@ -93,7 +93,6 @@ class Assembler
 
   # attempt to turn a parsed line into a chunk of words.
   compileLine: (pline, address) ->
-    delete pline.line.spans
     @debug "+ compiling @ ", address, ": ", pline
 
     # FIXME

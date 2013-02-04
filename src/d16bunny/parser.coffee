@@ -5,18 +5,18 @@ AssemblerError = require('./errors').AssemblerError
 prettyPrinter = require('./prettyprint').prettyPrinter
 
 class Span
-  Comment: "comment"
-  Directive: "directive"
-  Identifier: "identifier"
-  Operator: "operator"
-  String: "string"
-  StringEscape: "string-escape"
-  Register: "register"
-  Number: "number"
-  Instruction: "instruction"
-  Label: "label"
-
   constructor: (@type, @start, @end) ->
+
+Span.Comment = "comment"
+Span.Directive = "directive"
+Span.Identifier = "identifier"
+Span.Operator = "operator"
+Span.String = "string"
+Span.StringEscape = "string-escape"
+Span.Register = "register"
+Span.Number = "number"
+Span.Instruction = "instruction"
+Span.Label = "label"
 
 
 # for parsing a line of text, and syntax highlighting
@@ -101,12 +101,12 @@ class Line
       c = @text[++@pos]
     if c == ';'
       # truncate line at comment
-      @addSpan(Span::Comment, @pos, @end)
+      @addSpan(Span.Comment, @pos, @end)
       @end = @pos
 
   parseChar: ->
     if @text[@pos] != "\\" or @pos + 1 == @end
-      @addSpan(Span::String, @pos, @pos + 1)
+      @addSpan(Span.String, @pos, @pos + 1)
       return @text[@pos++]
     start = @pos
     @pos += 2
@@ -123,18 +123,18 @@ class Line
           "\\x"
       else
         "\\" + @text[@pos - 1]
-    @addSpan(Span::StringEscape, start, @pos)
+    @addSpan(Span.StringEscape, start, @pos)
     rv
 
   parseString: ->
     rv = ""
-    if not @scan('"', Span::String) then @fail "Expected string"
+    if not @scan('"', Span.String) then @fail "Expected string"
     while not @finished() and @text[@pos] != '"'
       rv += @parseChar()
-    @scanAssert('"', Span::String)
+    @scanAssert('"', Span.String)
     rv
 
-  parseWord: (name, type = Span::Identifier) ->
+  parseWord: (name, type = Span.Identifier) ->
     word = @match(Parser::SymbolRegex, type)
     if not word? then @fail "#{name} must contain only letters, digits, _ or ."
     word = word.toLowerCase()
@@ -153,7 +153,7 @@ class Line
       if @text[@pos] == '\\' and @pos + 1 < @end
         rv += @text[@pos++]
         rv += @text[@pos++]
-        @addSpan(Span::StringEscape, start, @pos)
+        @addSpan(Span.StringEscape, start, @pos)
       else
         ch = @text[@pos]
         rv += ch
@@ -161,7 +161,7 @@ class Line
         if ch == "\'" then inChar = not inChar
         @pos++
         # FIXME: "string" may not be the best syntax indicator
-        @addSpan(Span::String, start, @pos)
+        @addSpan(Span.String, start, @pos)
     if inString then @fail "Expected closing \""
     if inChar then @fail "Expected closing \'"
     rv
@@ -336,17 +336,17 @@ class Parser
     if line.finished() then return pline
 
     if @inMacro
-      if line.scan("}", Span::Directive)
+      if line.scan("}", Span.Directive)
         @inMacro = false
       else
         @macros[@inMacro].textLines.push(text)
       return pline
-    if line.scan("#", Span::Directive) or line.scan(".", Span::Directive)
+    if line.scan("#", Span.Directive) or line.scan(".", Span.Directive)
       @parseDirective(line, pline)
       return pline
 
-    if line.scan(":", Span::Label)
-      pline.label = line.parseWord("Label", Span::Label)
+    if line.scan(":", Span.Label)
+      pline.label = line.parseWord("Label", Span.Label)
       if pline.label[0] == "."
         if @lastLabel? then pline.label = @lastLabel + pline.label
       else
@@ -355,7 +355,7 @@ class Parser
     return pline if line.finished()
 
     pline.opPos = line.mark()
-    pline.op = line.parseWord("Operation name", Span::Instruction)
+    pline.op = line.parseWord("Operation name", Span.Instruction)
 
     if @macros[pline.op]
       line.rewind(pline.opPos)
@@ -371,7 +371,7 @@ class Parser
       pline.name = pline.label
       delete pline.label
       delete pline.op
-      line.scan("equ", Span::Directive)
+      line.scan("equ", Span.Directive)
       line.skipWhitespace()
       pline.data.push @parseExpression(line)
       line.skipWhitespace()
@@ -385,20 +385,20 @@ class Parser
     if pline.op == "org"
       line.rewind(pline.opPos)
       delete pline.op
-      line.scan("org", Span::Directive)
+      line.scan("org", Span.Directive)
       pline.directive = "org"
       @parseOrgDirective(line, pline)
       return pline
 
     line.skipWhitespace()
-    if line.scan("=", Span::Operator)
+    if line.scan("=", Span.Operator)
       # special case "name = value"
       line.rewind(pline.opPos)
       delete pline.op
       pline.directive = "define"
-      pline.name = line.parseWord("Constant name", Span::Identifier)
+      pline.name = line.parseWord("Constant name", Span.Identifier)
       line.skipWhitespace()
-      line.scan("=", Span::Operator)
+      line.scan("=", Span.Operator)
       line.skipWhitespace()
       pline.data.push @parseExpression(line)
       line.skipWhitespace()
@@ -410,7 +410,7 @@ class Parser
     while not line.finished()
       pline.operands.push(@parseOperand(line, pline.operands.length == 0))
       line.skipWhitespace()
-      if not line.finished() and line.scan(",", Span::Operator) then line.skipWhitespace()
+      if not line.finished() and line.scan(",", Span.Operator) then line.skipWhitespace()
 
     pline
 
@@ -424,7 +424,7 @@ class Parser
       line.skipWhitespace()
       return left if line.finished() or line.matchAhead(Parser::DelimiterRegex)
       m = line.mark()
-      op = line.match(Parser::OperatorRegex, Span::Operator)
+      op = line.match(Parser::OperatorRegex, Span.Operator)
       if not op? then line.fail "Unknown operator (try: + - * / % << >> & ^ |)"
       newPrecedence = Parser::Binary[op]
       if newPrecedence <= precedence
@@ -435,7 +435,7 @@ class Parser
 
   parseUnary: (line) ->
     start = line.pos
-    op = line.match(Parser::UnaryRegex, Span::Operator)
+    op = line.match(Parser::UnaryRegex, Span.Operator)
     if op?
       expr = @parseAtom(line)
       Expression::Unary(line.text, start, op, expr)
@@ -447,30 +447,30 @@ class Parser
     line.skipWhitespace()
     if line.finished() then line.fail "Value expected (operand or expression)"
     m = line.mark()
-    if line.scan("(", Span::Operator)
+    if line.scan("(", Span.Operator)
       atom = @parseExpression(line)
       line.skipWhitespace()
-      if line.finished() or (not line.scan(")", Span::Operator)) then line.fail "Missing ) on expression"
+      if line.finished() or (not line.scan(")", Span.Operator)) then line.fail "Missing ) on expression"
       return atom
-    if line.scan("'", Span::String)
+    if line.scan("'", Span.String)
       # literal char
       ch = line.parseChar()
-      line.scanAssert("'", Span::String)
+      line.scanAssert("'", Span.String)
       return Expression::Literal(line.text, m.pos, ch.charCodeAt(0))
-    if line.scan("%", Span::Register)
+    if line.scan("%", Span.Register)
       # allow unix-style %A for register names
-      x = line.match(Dcpu.RegisterRegex, Span::Register)
+      x = line.match(Dcpu.RegisterRegex, Span.Register)
       if not x? then line.fail "Expected register name"
       return Expression::Register(line.text, m.pos, x.toLowerCase())
-    x = line.match(Parser::HexRegex, Span::Number)
+    x = line.match(Parser::HexRegex, Span.Number)
     if x? then return Expression::Literal(line.text, m.pos, parseInt(x, 16))
-    x = line.match(Parser::BinaryRegex, Span::Number)
+    x = line.match(Parser::BinaryRegex, Span.Number)
     if x? then return Expression::Literal(line.text, m.pos, parseInt(x[2...], 2))
-    x = line.match(Parser::NumberRegex, Span::Number)
+    x = line.match(Parser::NumberRegex, Span.Number)
     if x? then return Expression::Literal(line.text, m.pos, parseInt(x, 10))
-    x = line.match(Dcpu.RegisterRegex, Span::Register)
+    x = line.match(Dcpu.RegisterRegex, Span.Register)
     if x? then return Expression::Register(line.text, m.pos, x.toLowerCase())
-    x = line.match(Parser::LabelRegex, Span::Identifier)
+    x = line.match(Parser::LabelRegex, Span.Identifier)
     if x?
       if x[0] == "." and @lastLabel? then x = @lastLabel + x
       return Expression::Label(line.text, m.pos, x)
@@ -488,14 +488,14 @@ class Parser
     dereference = false
     inPick = false
 
-    if line.scan("[", Span::Operator)
+    if line.scan("[", Span.Operator)
       dereference = true
-    else if line.scan("pick", Span::Register)
+    else if line.scan("pick", Span.Register)
       inPick = true
 
     expr = @parseExpression(line)
     @debug "  parse operand: expr=", expr
-    if dereference then line.scanAssert("]", Span::Operator)
+    if dereference then line.scanAssert("]", Span.Operator)
     if inPick then return new Operand(m.pos, Dcpu.Specials["pick"], expr)
     if expr.register? 
       if Dcpu.Specials[expr.register]?
@@ -536,10 +536,10 @@ class Parser
         s = line.parseString()
         pline.data.push(Expression::Literal(line.text, m.pos, s.charCodeAt(i))) for i in [0 ... s.length]
       else if line.scanAhead('p"') or line.scanAhead('r"')
-        if line.scan("r", Span::String)
+        if line.scan("r", Span.String)
           rom = true
         else
-          line.scan("p", Span::String)
+          line.scan("p", Span.String)
         s = line.parseString()
         word = 0
         inWord = false
@@ -552,7 +552,7 @@ class Parser
       else
         pline.data.push(@parseExpression(line))
       line.skipWhitespace()
-      if line.scan(",", Span::Operator) then line.skipWhitespace()
+      if line.scan(",", Span.Operator) then line.skipWhitespace()
 
   # FIXME: test data line with unresolved expression
 
@@ -561,7 +561,7 @@ class Parser
   # a directive starts with "#" or "."
   parseDirective: (line, pline) ->
     m = line.mark()
-    pline.directive = line.parseWord("Directive", Span::Directive)
+    pline.directive = line.parseWord("Directive", Span.Directive)
     line.skipWhitespace()
     switch pline.directive
       when "macro" then @parseMacroDirective(line, pline)
@@ -591,7 +591,7 @@ class Parser
     line.skipWhitespace()
     parameters = @parseMacroParameters(line)
     line.skipWhitespace()
-    line.scanAssert("{", Span::Directive)
+    line.scanAssert("{", Span.Directive)
     fullname = "#{pline.name}(#{parameters.length})"
     if @macros[fullname]?
       line.rewind(m)
@@ -603,21 +603,21 @@ class Parser
 
   parseMacroParameters: (line) ->
     args = []
-    if not line.scan("(", Span::Directive) then return []
+    if not line.scan("(", Span.Directive) then return []
     line.skipWhitespace()
     while not line.finished()
-      if line.scan(")", Span::Directive) then return args
+      if line.scan(")", Span.Directive) then return args
       args.push(line.parseWord("Argument name"))
       line.skipWhitespace()
-      if line.scan(",", Span::Directive) then line.skipWhitespace()
+      if line.scan(",", Span.Directive) then line.skipWhitespace()
     line.fail "Expected )"
 
   # expand a macro call, recursively parsing the nested lines
   parseMacroCall: (line, pline) ->
     m = line.mark()
-    name = line.parseWord("Macro name", Span::Identifier)
+    name = line.parseWord("Macro name", Span.Identifier)
     line.skipWhitespace()
-    if line.scan("(", Span::Operator) then line.skipWhitespace()
+    if line.scan("(", Span.Operator) then line.skipWhitespace()
     args = @parseMacroArgs(line)
     if @macros[name].indexOf(args.length) < 0
       line.rewind(m)
@@ -656,9 +656,9 @@ class Parser
     args = []
     line.skipWhitespace()
     while not line.finished()
-      if line.scan(")", Span::Operator) then return args
+      if line.scan(")", Span.Operator) then return args
       args.push(line.parseMacroArg())
-      if line.scan(",", Span::Operator) then line.skipWhitespace()
+      if line.scan(",", Span.Operator) then line.skipWhitespace()
     args
 
 
