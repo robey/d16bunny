@@ -8,6 +8,7 @@ class PrettyPrinter
     "\u001b[" + @colors[colorIndex] + "m" + s + "\u001b[0m"
 
   dump: (obj, colorIndex = 0) ->
+    if obj is null then return @inColor("null", colorIndex)
     switch typeof obj
       when 'undefined' then @inColor("undefined", colorIndex)
       when 'string' then @inColor(@dumpString(obj), colorIndex)

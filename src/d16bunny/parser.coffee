@@ -197,17 +197,61 @@ class Operand
   # code: 5-bit value for the operand in an opcode
   # expr: (optional) an expression to be evaluated for the immediate
   # immediate: (optional) a resolved 16-bit immediate
-  # (only one of 'expr' or 'immediate' will ever be set)
+  #   (only one of 'expr' or 'immediate' will ever be set)
+  # compactable: true if the im
   constructor: (@pos, @code, @expr) ->
+    @immediate = null
+    @compacting = false
 
-  toString: -> if @immediate then "<#{@code}, #{@immediate}>" else "<#{@code}>"
+  toString: -> if @immediate? then "<#{@code}, #{@immediate}>" else "<#{@code}>"
 
   dependency: (symtab={}) ->
     @expr?.dependency(symtab)
 
+  # returns true if the operand is newly compactible.
+  # the compactible-ness is memoized, but resolved expressions are not.
+  # this method is meant to be used as an edge-trigger that the size of the
+  # instruction has shrunk, so after a true result, future calls will return
+  # false. it also returns false if there's an expression that can't be 
+  # resolved yet (so we don't know if it can be compacted).
+  checkCompact: (symtab) ->
+    if @compacting or @code != Operand.Immediate then return false
+    if @expr?
+      if @expr.dependency(symtab)? then return false
+      value = @expr.evaluate(symtab)
+    else if @immediate?
+      value = @immediate
+    else
+      return false
+    if value == 0xffff or value < 31
+      @compacting = true
+      true
+    else
+      false
+
+  # return the 5-bit code for this operand, and any immediate value (or null).
+  # if there's an expression that can't be resolved yet, it will be returned
+  # instead of the immediate.
+  pack: (symtab, canCompact=false) ->
+    value = null
+    if @expr? and not @expr.dependency(symtab)?
+      value = @expr.evaluate(symtab)
+    else if @immediate?
+      value = @immediate
+    if @compacting and canCompact and value?
+      inline = if value == 0xffff then 0x00 else (0x01 + value)
+      [ Operand.ImmediateInline + inline, null ]
+    else if @expr? and not value?
+      [ @code, @expr ]
+    else if value?
+      [ @code, value ]
+    else
+      [ @code, null ]
+
   # attempt to resolve the expression in this operand. returns true on
   # success, and sets:
   #   - immediate: (optional) immediate value for this operand
+  #FIXME delete
   resolve: (symtab) ->
     # FIXME move to caller
     #      @debug "  resolve operand: code=#{@code} expr=#{@expr.toString()}"
@@ -216,14 +260,23 @@ class Operand
     @immediate = @expr.evaluate(symtab) & 0xffff
     delete @expr
 
+  # will this fit into 
   # fit the immediate into a the operand code, if possible.
+  #FIXME delete
   compact: ->
-    if @code == 0x1f and (@immediate == 0xffff or @immediate < 31)
+    if @code == Operand.Immediate and (@immediate == 0xffff or @immediate < 31)
       @code = 0x20 + (if @immediate == 0xffff then 0x00 else (0x01 + @immediate))
       delete @immediate
       true
     else
       false
+
+Operand.Register = 0x00
+Operand.RegisterDereference = 0x08
+Operand.RegisterIndex = 0x10
+Operand.ImmediateDereference = 0x1e
+Operand.Immediate = 0x1f
+Operand.ImmediateInline = 0x20
 
 
 class Macro
@@ -275,6 +328,7 @@ class Parser
 
   # returns a Line object, with syntax parsed out
   parseLine: (text, lineNumber = 0) ->
+    @debug "+ parse: ", lineNumber, ": ", text
     line = new Line(text)
     pline = new ParsedLine(line)
     pline.lineNumber = lineNumber
@@ -429,7 +483,7 @@ class Parser
   # if 'destination' is set, then the operand is in the destination slot
   # (which determines whether it uses "push" or "pop").
   parseOperand: (line, destination = false) ->
-    @debug "  parse operand: dest=#{destination} pos=#{line.pos}"
+    @debug "  parse operand: dest=", destination, " pos=", line.pos
     m = line.mark()
     dereference = false
     inPick = false
@@ -440,9 +494,9 @@ class Parser
       inPick = true
 
     expr = @parseExpression(line)
-    @debug "  parse operand: expr=#{expr}"
+    @debug "  parse operand: expr=", expr
     if dereference then line.scanAssert("]", Span::Operator)
-    if inPick then return new Operand(m.pos, 0x1a, expr)
+    if inPick then return new Operand(m.pos, Dcpu.Specials["pick"], expr)
     if expr.register? 
       if Dcpu.Specials[expr.register]?
         if dereference
@@ -452,7 +506,8 @@ class Parser
           line.rewind(m)
           line.fail "You can't use #{expr.toString()} in this position"
         return new Operand(m.pos, Dcpu.Specials[expr.register])
-      return new Operand(m.pos, (if dereference then 0x08 else 0x00) + Dcpu.Registers[expr.register])
+      code = if dereference then Operand.RegisterDereference else Operand.Register
+      return new Operand(m.pos, code + Dcpu.Registers[expr.register])
     # special case: [literal + register]
     if dereference and expr.binary? and (expr.left.register? or expr.right.register?)
       if expr.binary == '+' or (expr.binary == '-' and expr.left.register?)
@@ -464,10 +519,10 @@ class Parser
         expr = if expr.left.register? then expr.right else expr.left
         # allow [R-n]
         if op == '-' then expr = Expression::Unary(expr.text, expr.pos, '-', expr)
-        return new Operand(m.pos, 0x10 + Dcpu.Registers[register], expr)
+        return new Operand(m.pos, Operand.RegisterIndex + Dcpu.Registers[register], expr)
       line.rewind(m)
       line.fail "Only a register +/- a constant is allowed"
-    new Operand(m.pos, (if dereference then 0x1e else 0x1f), expr)
+    new Operand(m.pos, (if dereference then Operand.ImmediateDereference else Operand.Immediate), expr)
 
   # ----- data
 
@@ -569,12 +624,12 @@ class Parser
       line.fail "Macro '#{name}' requires #{@macros[name].join(' or ')} arguments"
     macro = @macros["#{name}(#{args.length})"]
 
-    @debug "  macro expansion of #{name}(#{args.length}):"
+    @debug "  macro expansion of ", name, "(", args.length, "):"
     newTextLines = for text in macro.textLines
       # textual substitution, no fancy stuff.
       for i in [0 ... args.length]
         text = text.replace(macro.parameterMatchers[i], args[i])
-      @debug "  -- #{text}"
+      @debug "  -- ", text
       text
     @debug "  --."
 
@@ -593,7 +648,7 @@ class Parser
         for x in expanded then pline.expanded.push(x)
       else
         pline.expanded.push(xline)
-    @debug "  macro expansion of #{name}(#{args.length}) complete: #{pline.expanded.length} lines"
+    @debug "  macro expansion of ", name, "(", args.length, ") complete: ", pline.expanded.length, " lines"
     pline
 
   # don't overthink this. we want literal text substitution.
