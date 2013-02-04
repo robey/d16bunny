@@ -6,6 +6,11 @@ AssemblerError = require('./errors').AssemblerError
 AssemblerOutput = require('./output').AssemblerOutput
 prettyPrinter = require('./prettyprint').prettyPrinter
 
+padding = "0000"
+hex = (n) ->
+  rv = n.toString(16)
+  "0x#{padding[0 ... 4 - rv.length]}#{rv}"
+
 # line compiled into data at an address.
 # data is an array of 16-bit words.
 # in mid-compilation, some items in 'data' may be unresolved equations.
@@ -13,6 +18,10 @@ prettyPrinter = require('./prettyprint').prettyPrinter
 class DataLine
   constructor: (@address = 0, @data = []) ->
     @expanded = null
+
+  toString: ->
+    "#{hex(@address)}: " + @data.map((x) => hex(x)).join(", ")
+
 
 # compile lines of DCPU assembly.
 class Assembler
@@ -25,6 +34,7 @@ class Assembler
     # current symbol table for resolving named references
     @symtab = {}
     @errors = []
+    @shrunk = false
 
   debug: (list...) ->
     unless @debugger? then return
@@ -58,39 +68,61 @@ class Assembler
       null
     
   parse: (textLines, maxErrors = 10) ->
-    parser = new Parser(@logger)
+    parser = new Parser()
     parser.debugger = @debugger
+    rv = []
     for text, i in textLines
-      3
+      pline = @process i, => parser.parseLine(text, i)
+      break if @errors.length >= @errorCount
+      rv.push(pline)
+    rv
 
   # # ensure ./$ are set for macro expansions
   # symtab["."] = org
   # symtab["$"] = org
 
+  # compile a line of code at a given address.
+  # fields that can't be resolved yet will be left as expression trees, but the data size will be
+  # computed.
+  # returns an object with:
+  #   - data: compiled output, made up either of words or unresolved expression trees
+  #   - org: the memory location (pc) where this data starts
+  #   - branchFrom: (optional) if this is a relative-branch instruction
+
+
+
   # attempt to turn a parsed line into a chunk of words.
-  compileParsedLine: (line, address, symtab) ->
-    @debug "  compiling: #{line}"
-    if line.label? then symtab[line.label] = address
-    if line.data? then return new DataLine(address, line.data)
-    if line.directive?
-      switch line.directive
-        when "org" then return new DataLine(line.data[0], [])
-        when "define" then symtab[line.name] = line.data[0]
+  compileLine: (pline, address) ->
+    delete pline.line.spans
+    @debug "+ compiling @ ", address, ": ", pline
+
+    # FIXME
+    @symtab["."] = address
+    @symtab["$"] = address
+
+    if pline.label? then @symtab[pline.label] = address
+    if pline.data.length > 0 then return new DataLine(address, pline.data)
+    if pline.directive?
+      switch pline.directive
+        when "org" then return new DataLine(pline.data[0], [])
+        when "define" then @symtab[pline.name] = pline.data[0]
       return null
-    if line.expanded?
+    if pline.expanded?
       rv = new DataLine(address, [])
-      rv.expanded = line.expanded.map (xline) =>
-        dataLine = @compileParsedLine(xline, address, symtab)
+      rv.expanded = pline.expanded.map (x) =>
+        dataLine = @compileParsedLine(x, address)
         address = dataLine.address + dataLine.data.length
         dataLine
       return rv
-    if not line.op? then @error(line.lineNumber, 0, "Internal error: what is this line?")
+    if not pline.op?
+      @error(pline.lineNumber, 0, "Internal error: what is this line?")
+      return new DataLine(address, [])
 
     # convenient aliases
-    if line.op == "jmp"
-      if line.operands.length != 1 then @error(line.lineNumber, line.opPos, "JMP requires a single parameter")
-      line.op = "set"
-      line.operands.unshift(new Operand(line.opPos, Dcpu.Specials["pc"]))
+    if pline.op == "jmp"
+      if pline.operands.length != 1 then @error(pline.lineNumber, pline.opPos, "JMP requires a single parameter")
+      pline.op = "set"
+      pline.operands.unshift(new Operand(pline.opPos, Dcpu.Specials["pc"]))
 
     # if line.op == "hlt"
     #   if line.operands.length != 0 then @fail line.pos, "HLT has no parameters"
@@ -105,21 +137,28 @@ class Assembler
     #   return { data: [ line.operands[0] ], org: org, branchFrom: org + 1 }
 
     data = [ 0 ]
-    if line.operands.length > 0
-      for i in [line.operands.length - 1 .. 0]
-        x = line.operands[i]
-        if x.expr? then data.push(x.expr)
-        if x.immediate? then data.push(x.immediate)
-    if Dcpu.BinaryOp[line.op]?
-      if line.operands.length != 2
-        @error(line.lineNumber, line.opPos, "#{line.op.toUpperCase()} requires 2 parameters")
-      data[0] = (line.operands[1].code << 10) | (line.operands[0].code << 5) | Dcpu.BinaryOp[line.op]
-    else if Dcpu.SpecialOp[line.op]?
-      if line.operands.length != 1
-        @error(line.lineNumber, line.opPos, "#{line.op.toUpperCase()} requires 1 parameter")
-      data[0] = (line.operands[0].code << 10) | (Dcpu.SpecialOp[line.op] << 5)
+    operandCodes = []
+    if pline.operands.length > 0
+      for i in [pline.operands.length - 1 .. 0]
+        x = pline.operands[i]
+        canCompact = (i == pline.operands.length - 1)
+        # do any easy compactions.
+        if canCompact and x.checkCompact(@symtab)
+          @debug "  compacted ", x
+          @shrunk = true
+        [ code, immediate ] = x.pack(@symtab, canCompact)
+        operandCodes.push(code)
+        if immediate? then data.push(immediate)
+    if Dcpu.BinaryOp[pline.op]?
+      if pline.operands.length != 2
+        @error(pline.lineNumber, pline.opPos, "#{pline.op.toUpperCase()} requires 2 parameters")
+      data[0] = (operandCodes[0] << 10) | (operandCodes[1] << 5) | Dcpu.BinaryOp[pline.op]
+    else if Dcpu.SpecialOp[pline.op]?
+      if pline.operands.length != 1
+        @error(pline.lineNumber, pline.opPos, "#{pline.op.toUpperCase()} requires 1 parameter")
+      data[0] = (operandCodes[0] << 10) | (Dcpu.SpecialOp[pline.op] << 5)
     else
-      @error(line.lineNumber, line.opPos, "Unknown instruction: #{line.op}")
+      @error(pline.lineNumber, pline.opPos, "Unknown instruction: #{pline.op}")
     new DataLine(address, data)
 
 
@@ -163,18 +202,6 @@ class Assembler
 
 
 
-  # compile a line of code at a given address.
-  # fields that can't be resolved yet will be left as expression trees, but the data size will be
-  # computed.
-  # returns an object with:
-  #   - data: compiled output, made up either of words or unresolved expression trees
-  #   - org: the memory location (pc) where this data starts
-  #   - branchFrom: (optional) if this is a relative-branch instruction
-  compileLine: (text, org) ->
-    @symtab["."] = org
-    @symtab["$"] = org
-    @debug "+ compile line @ ", org, ": ", text, " -- symtab: ", @symtab
-    @compileParsedLine(@parseLine(text), org)
 
   xcompileParsedLine: (line, org) ->
     @debug "  parsed line: ", line
