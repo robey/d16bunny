@@ -321,8 +321,8 @@ describe "Parser", ->
       parser = new d16bunny.Parser()
       for x in [
         "#macro bra(addr) {"
-        "  add pc, addr - next"
-        ":next"
+        "  add pc, addr - .next"
+        ":.next"
         "}"
       ] then parser.parseLine(x)
       line = parser.parseLine("  bra 0x1000")

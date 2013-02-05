@@ -345,12 +345,14 @@ class Parser
         else prettyPrinter.dump(item)
     @debugger(slist.join(""))
 
-  fixLabel: (label) ->
+  fixLabel: (label, save=false) ->
     if label[0] == "."
-      if @lastLabel? then label = @lastLabel + label
+      if @expandingMacro?
+        label = @expandingMacro + label
+      else if @lastLabel?
+        label = @lastLabel + label
     else
-      @lastLabel = label
-    if @expandingMacro? then label = @expandingMacro + "." + label
+      if save then @lastLabel = label
     label
 
   # returns a Line object, with syntax parsed out
@@ -376,7 +378,7 @@ class Parser
 
     if line.scan(":", Span.Label)
       pline.label = line.parseWord("Label", Span.Label)
-      pline.label = @fixLabel(pline.label)
+      pline.label = @fixLabel(pline.label, true)
       line.skipWhitespace()
     return pline if line.finished()
 
@@ -496,9 +498,7 @@ class Parser
     if x? then return Expression::Register(line.text, m.pos, x.toLowerCase())
     x = line.match(Parser::LabelRegex, Span.Identifier)
     if x?
-      if x[0] == "." and @lastLabel? then x = @lastLabel + x
-      if @expandingMacro then x = @expandingMacro + "." + x
-      return Expression::Label(line.text, m.pos, x)
+      return Expression::Label(line.text, m.pos, @fixLabel(x, false))
     line.rewind(m)
     line.fail "Expected expression"
 

@@ -12,6 +12,7 @@ hex = (n) ->
   rv = n.toString(16)
   "0x#{padding[0 ... 4 - rv.length]}#{rv}"
 
+
 # line compiled into data at an address.
 # data is an array of 16-bit words.
 # in mid-compilation, some items in 'data' may be unresolved equations.
@@ -21,7 +22,16 @@ class DataLine
     @expanded = null
 
   toString: ->
-    "#{hex(@address)}: " + @data.map((x) => hex(x)).join(" ")
+    extra = if @expanded?
+      "{ " + @expanded.map((x) -> x.toString()).join(" / ") + " }"
+    else 
+      ""
+    data = @data.map (item) =>
+      if item instanceof Expression
+        item.toString()
+      else
+        hex(item)
+    "#{hex(@address)}: " + data.join(", ") + extra
 
 
 # compile lines of DCPU assembly.
@@ -71,6 +81,7 @@ class Assembler
   parse: (textLines, maxErrors = 10) ->
     parser = new Parser()
     parser.debugger = @debugger
+    @addBuiltinMacros(parser)
     rv = []
     for text, i in textLines
       pline = @process i, => parser.parseLine(text, i)
@@ -93,6 +104,34 @@ class Assembler
   #   - branchFrom: (optional) if this is a relative-branch instruction
 
 
+  # builtin macros
+  builtins:
+    jmp: [
+      ".macro jmp(addr) {"
+      "  set pc, addr"
+      "}"
+    ]
+    hlt: [
+      ".macro hlt {"
+      "  sub pc, 1"
+      "}"
+    ]
+    ret: [
+      ".macro ret {"
+      "  set pc, pop"
+      "}"
+    ]
+    bra: [
+      ".macro bra(addr) {"
+      "  add pc, addr - .next"
+      ":.next"
+      "}"
+    ]
+
+  addBuiltinMacros: (parser) ->
+    for name, textLines of @builtins
+      for text, lineNumber in textLines
+        parser.parseLine(text, lineNumber)
 
   # attempt to turn a parsed line into a chunk of words.
   compileLine: (pline, address) ->
@@ -111,7 +150,7 @@ class Assembler
     if pline.expanded?
       rv = new DataLine(address, [])
       rv.expanded = pline.expanded.map (x) =>
-        dataLine = @compileParsedLine(x, address)
+        dataLine = @compileLine(x, address)
         address = dataLine.address + dataLine.data.length
         dataLine
       return rv
@@ -121,32 +160,32 @@ class Assembler
 
     # convenient aliases
     # FIXME: use macros for this.
-    if pline.op == "jmp"
-      if pline.operands.length != 1 then @error(pline.lineNumber, pline.opPos.pos, "JMP requires a single parameter")
-      pline.op = "set"
-      pline.operands.unshift(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
-    if pline.op == "hlt"
-      if pline.operands.length != 0 then @error(pline.lineNumber, pline.opPos.pos, "HLT has no parameters")
-      pline.op = "sub"
-      pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
-      pline.operands.push(new Operand(pline.opPos.pos, Operand.Immediate, Expression::Literal("", 0, 1)))
-    if pline.op == "ret"
-      if pline.operands.length != 0 then @error(pline.lineNumber, pline.opPos.pos, "RET has no parameters")
-      pline.op = "set"
-      pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
-      pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pop"]))
-    if pline.op == "bra"
-      if pline.operands.length != 1 then @error(pline.lineNumber, pline.opPos.pos, "BRA requires a single parameter")
-      if line.operands[0].code != Operand::Immediate then @error(pline.lineNumber, line.operands[0].pos, "BRA takes only an immediate value")
-      # we'll compute the branch on the 2nd pass.
-      pline.op = "add"
-      pline.operands.unshift(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
-      if pline.operands[1].immediate?
-        3
-      else if pline.operands[1].expr?
-        3
-      else
-        @error(pline.lineNumber, line.operands[1].pos, "Internal error: missing value")      
+    # if pline.op == "jmp"
+    #   if pline.operands.length != 1 then @error(pline.lineNumber, pline.opPos.pos, "JMP requires a single parameter")
+    #   pline.op = "set"
+    #   pline.operands.unshift(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
+    # if pline.op == "hlt"
+    #   if pline.operands.length != 0 then @error(pline.lineNumber, pline.opPos.pos, "HLT has no parameters")
+    #   pline.op = "sub"
+    #   pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
+    #   pline.operands.push(new Operand(pline.opPos.pos, Operand.Immediate, Expression::Literal("", 0, 1)))
+    # if pline.op == "ret"
+    #   if pline.operands.length != 0 then @error(pline.lineNumber, pline.opPos.pos, "RET has no parameters")
+    #   pline.op = "set"
+    #   pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
+    #   pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pop"]))
+    # if pline.op == "bra"
+    #   if pline.operands.length != 1 then @error(pline.lineNumber, pline.opPos.pos, "BRA requires a single parameter")
+    #   if line.operands[0].code != Operand::Immediate then @error(pline.lineNumber, line.operands[0].pos, "BRA takes only an immediate value")
+    #   # we'll compute the branch on the 2nd pass.
+    #   pline.op = "add"
+    #   pline.operands.unshift(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
+    #   if pline.operands[1].immediate?
+    #     3
+    #   else if pline.operands[1].expr?
+    #     3
+    #   else
+    #     @error(pline.lineNumber, line.operands[1].pos, "Internal error: missing value")      
 #      return { data: [ line.operands[0] ], org: org, branchFrom: org + 1 }
 
     @optimize(pline)

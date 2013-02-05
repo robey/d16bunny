@@ -1,21 +1,21 @@
 should = require 'should'
 d16bunny = require '../src/d16bunny'
 
+pp = require('../src/d16bunny/prettyprint').prettyPrinter
+
 logger = (lineno, pos, message) ->
 
 describe "Assembler.compileLine", ->
-  parse = (text, debugging) ->
-    parser = new d16bunny.Parser()
-    if debugging then parser.debugger = console.log
-    parser.parseLine(text)
-
   compileLine = (text, address, symbols={}, debugging=false) ->
     a = new d16bunny.Assembler(logger)
+    a.symtab = symbols
+    parser = new d16bunny.Parser()
+    a.addBuiltinMacros(parser)
     if symbols.debugging
       a.debugger = console.log
+      parser.debugger = console.log
       console.log "-----"
-    a.symtab = symbols
-    dline = a.compileLine(parse(text, debugging), address)
+    dline = a.compileLine(parser.parseLine(text), address)
     [ dline, a.symtab ]
 
   it "compiles a simple set", ->
@@ -33,19 +33,27 @@ describe "Assembler.compileLine", ->
 
   it "compiles a special (jsr)", ->
     [ info, symtab ] = compileLine("jsr cout", 0x200, cout: 0x999)
-    info.toString().should.eql("0x0200: 0x7c20 0x0999")
+    info.toString().should.eql("0x0200: 0x7c20, 0x0999")
 
-  it "compiles jmp", ->
-    [ info, symtab ] = compileLine("jmp cout", 0x200, cout: 0x999)
-    info.toString().should.eql("0x0200: 0x7f81 0x0999")
+  describe "builtin macros", ->
+    it "compiles jmp", ->
+      [ info, symtab ] = compileLine("jmp cout", 0x200, cout: 0x999)
+      info.toString().should.eql("0x0200: { 0x0200: 0x7f81, 0x0999 }")
 
-  it "compiles hlt", ->
-    [ info, symtab ] = compileLine("hlt", 0x200)
-    info.toString().should.eql("0x0200: 0x8b83")
+    it "compiles hlt", ->
+      [ info, symtab ] = compileLine("hlt", 0x200)
+      info.toString().should.eql("0x0200: { 0x0200: 0x8b83 }")
 
-  it "compiles ret", ->
-    [ info, symtab ] = compileLine("ret", 0x200)
-    info.toString().should.eql("0x0200: 0x6381")
+    it "compiles ret", ->
+      [ info, symtab ] = compileLine("ret", 0x200)
+      info.toString().should.eql("0x0200: { 0x0200: 0x6381 }")
+
+    it "compiles bra", ->
+      [ info, symtab ] = compileLine("bra exit", 0x200, exit: 0x204)
+      # force branch to be eval'd
+      x = info.expanded[0].data[1].evaluate(symtab)
+      info.expanded[0].data[1] = x
+      info.toString().should.eql("0x0200: { 0x0200: 0x7f82, 0x0002 / 0x0202:  }")
 
   it "optimizes sub x, 65530 to add x, 6", ->
     [ info, symtab ] = compileLine("sub x, 65530", 0x200)
