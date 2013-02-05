@@ -66,6 +66,12 @@ class Expression
         when '&' then l & r
         when '^' then l ^ r
         when '|' then l | r
+        when '<' then (if l < r then 1 else 0)
+        when '>' then (if l > r then 1 else 0)
+        when '<=' then (if l <= r then 1 else 0)
+        when '>=' then (if l >= r then 1 else 0)
+        when '==' then (if l == r then 1 else 0)
+        when '!=' then (if l != r then 1 else 0)
         else throw new AssemblerError(@text, @pos, "Internal error (undefined binary operator)")
     e.toString = -> "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")"
     e.dependency = (symtab) ->

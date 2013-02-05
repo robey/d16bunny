@@ -206,7 +206,13 @@ class Operand
       @immediate = @expr.evaluate() & 0xffff
       delete @expr
 
-  toString: -> if @immediate? then "<#{@code}, #{@immediate}>" else "<#{@code}>"
+  toString: ->
+    if @immediate?
+      "<#{@code}, #{@immediate}>"
+    else if @expr?
+      "<#{@code}, #{@expr.toString()}>"
+    else
+      "<#{@code}>"
 
   dependency: (symtab={}) ->
     @expr?.dependency(symtab)
@@ -325,7 +331,11 @@ class Parser
   reset: ->
     @macros = {}
     @inMacro = null    # if waiting for an "}"
-    @lastLabel = null  # for resolving relative labels
+    @ifStack = []      # for nested .if
+    @ignoring = false  # for skipping sections inside in .if
+    @constants = {}            # definitions found by .define
+    @lastLabel = null          # for resolving relative labels
+    @expandingMacro = null     # label prefix for a currently-expanding macro
 
   debug: (list...) ->
     unless @debugger? then return
@@ -334,6 +344,14 @@ class Parser
         when 'string' then item.toString()
         else prettyPrinter.dump(item)
     @debugger(slist.join(""))
+
+  fixLabel: (label) ->
+    if label[0] == "."
+      if @lastLabel? then label = @lastLabel + label
+    else
+      @lastLabel = label
+    if @expandingMacro? then label = @expandingMacro + "." + label
+    label
 
   # returns a Line object, with syntax parsed out
   parseLine: (text, lineNumber = 0) ->
@@ -344,22 +362,21 @@ class Parser
     line.skipWhitespace()
     if line.finished() then return pline
 
+    if line.scan("#", Span.Directive) or line.scan(".", Span.Directive)
+      @parseDirective(line, pline)
+      return pline
+    if @ignoring then return pline
+
     if @inMacro
       if line.scan("}", Span.Directive)
         @inMacro = false
       else
         @macros[@inMacro].textLines.push(text)
       return pline
-    if line.scan("#", Span.Directive) or line.scan(".", Span.Directive)
-      @parseDirective(line, pline)
-      return pline
 
     if line.scan(":", Span.Label)
       pline.label = line.parseWord("Label", Span.Label)
-      if pline.label[0] == "."
-        if @lastLabel? then pline.label = @lastLabel + pline.label
-      else
-        @lastLabel = pline.label
+      pline.label = @fixLabel(pline.label)
       line.skipWhitespace()
     return pline if line.finished()
 
@@ -376,13 +393,12 @@ class Parser
       line.rewind(pline.opPos)
       if not pline.label?
         line.fail "EQU must be a directive or on a line with a label"
-      pline.directive = "define"
-      pline.name = pline.label
+      name = pline.label
       delete pline.label
       delete pline.op
       line.scan("equ", Span.Directive)
       line.skipWhitespace()
-      pline.data.push @parseExpression(line)
+      @constants[name] = @parseExpression(line)
       line.skipWhitespace()
       if not line.finished() then line.fail "Unexpected content after definition"
       return pline
@@ -404,12 +420,11 @@ class Parser
       # special case "name = value"
       line.rewind(pline.opPos)
       delete pline.op
-      pline.directive = "define"
-      pline.name = line.parseWord("Constant name", Span.Identifier)
+      name = line.parseWord("Constant name", Span.Identifier)
       line.skipWhitespace()
       line.scan("=", Span.Operator)
       line.skipWhitespace()
-      pline.data.push @parseExpression(line)
+      @constants[name] = @parseExpression(line)
       line.skipWhitespace()
       if not line.finished() then line.fail "Unexpected content after definition"
       return pline
@@ -482,6 +497,7 @@ class Parser
     x = line.match(Parser::LabelRegex, Span.Identifier)
     if x?
       if x[0] == "." and @lastLabel? then x = @lastLabel + x
+      if @expandingMacro then x = @expandingMacro + "." + x
       return Expression::Label(line.text, m.pos, x)
     line.rewind(m)
     line.fail "Expected expression"
@@ -572,6 +588,14 @@ class Parser
     m = line.mark()
     pline.directive = line.parseWord("Directive", Span.Directive)
     line.skipWhitespace()
+    if pline.directive in [ "if", "else", "endif" ]
+      switch pline.directive
+        when "if" then @parseIfDirective(line, pline)
+        when "else" then @parseElseDirective(line, pline)
+        when "endif" then @parseEndifDirective(line, pline)
+      return
+    # no other directives count if we're in the ignoring part of an if-block.
+    if @ignoring then return
     switch pline.directive
       when "macro" then @parseMacroDirective(line, pline)
       when "define", "equ" then @parseDefineDirective(line, pline)
@@ -581,10 +605,10 @@ class Parser
         line.fail "Unknown directive: #{directive}"
 
   parseDefineDirective: (line, pline) ->
-    pline.directive = "define"
-    pline.name = line.parseWord("Definition name")
+    delete pline.directive
+    name = line.parseWord("Definition name")
     line.skipWhitespace()
-    pline.data.push @parseExpression(line)
+    @constants[name] = @parseExpression(line)
     line.skipWhitespace()
     if not line.finished() then @fail "Unexpected content after definition"
 
@@ -643,6 +667,10 @@ class Parser
     @debug "  --."
 
     pline.expanded = []
+    saved1 = @expandingMacro
+    @expandingMacro = name + "." + Date.now() + "." + Math.floor(Math.random() * 1000000.0)
+    saved2 = @lastLabel
+    @lastLabel = null
     for text in newTextLines
       xline = @parseLine(text)
       if xline.directive?
@@ -658,6 +686,8 @@ class Parser
       else
         pline.expanded.push(xline)
     @debug "  macro expansion of ", name, "(", args.length, ") complete: ", pline.expanded.length, " lines"
+    @expandingMacro = saved1
+    @lastLabel = saved2
     pline
 
   # don't overthink this. we want literal text substitution.
@@ -669,6 +699,33 @@ class Parser
       args.push(line.parseMacroArg())
       if line.scan(",", Span.Operator) then line.skipWhitespace()
     args
+
+  parseIfDirective: (line, pline) ->
+    line.skipWhitespace()
+    m = line.mark()
+    expr = @parseExpression(line)
+    if not line.finished() then line.fail "Unexpected content after IF"
+    if expr.dependency(@constants)?
+      line.rewind(m)
+      line.fail "IF expression must use only constants (undefined: #{expr.dependency(@constants)}"
+    expr = expr.evaluate(@constants)
+    @ignoring = (expr == 0)
+    @ifStack.push(@ignoring)
+
+  parseElseDirective: (line, pline) ->
+    line.skipWhitespace()
+    if not line.finished() then line.fail "Unexpected content after ELSE"
+    if @ifStack.length == 0 then line.fail "Dangling ELSE"
+    @ignoring = not @ignoring
+    @ifStack.pop()
+    @ifStack.push(@ignoring)
+
+  parseEndifDirective: (line, pline) ->
+    line.skipWhitespace()
+    if not line.finished() then line.fail "Unexpected content after ENDIF"
+    if @ifStack.length == 0 then line.fail "Dangling ENDIF"
+    @ifStack.pop()
+    if @ifStack.length > 0 then @ignoring = @ifStack[@ifStack.length - 1]
 
 
 exports.Line = Line

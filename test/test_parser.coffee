@@ -14,7 +14,7 @@ parseLine = (s) ->
   pline = parser.parseLine(s)
   html = trimHtml(pline.toHtml())
   for op in pline.operands then if op instanceof d16bunny.Operand then op.resolve()
-  [ pline, html ]
+  [ pline, html, parser.constants ]
 
 describe "Parser", ->
   it "unquotes chars", ->
@@ -207,27 +207,27 @@ describe "Parser", ->
       html.should.eql("{label::last} {instruction:set} {operator:[}{register:a}{operator:],} {string:&#39;,&#39;}")
 
     it "parses a definition with =", ->
-      [ pline, html ] = parseLine("screen = 0x8000")
-      pline.toString().should.eql(".define screen")
-      pline.data.map((x) => x.evaluate()).should.eql([ 32768 ])
+      [ pline, html, constants ] = parseLine("screen = 0x8000")
+      constants["screen"].evaluate().should.eql(0x8000)
+      pline.toString().should.eql("")
       html.should.eql("{identifier:screen} {operator:=} {number:0x8000}")
 
     it "parses a definition with #define", ->
-      [ pline, html ] = parseLine("#define happy 23")
-      pline.toString().should.eql(".define happy")
-      pline.data.map((x) => x.evaluate()).should.eql([ 23 ])
+      [ pline, html, constants ] = parseLine("#define happy 23")
+      constants["happy"].evaluate().should.eql(23)
+      pline.toString().should.eql("")
       html.should.eql("{directive:#define} {identifier:happy} {number:23}")
 
     it "parses a definition with .equ", ->
-      [ pline, html ] = parseLine(".equ happy 23")
-      pline.toString().should.eql(".define happy")
-      pline.data.map((x) => x.evaluate()).should.eql([ 23 ])
+      [ pline, html, constants ] = parseLine(".equ happy 23")
+      constants["happy"].evaluate().should.eql(23)
+      pline.toString().should.eql("")
       html.should.eql("{directive:.equ} {identifier:happy} {number:23}")
 
     it "parses a definition with equ", ->
-      [ pline, html ] = parseLine(":happy equ 23")
-      pline.toString().should.eql(".define happy")
-      pline.data.map((x) => x.evaluate()).should.eql([ 23 ])
+      [ pline, html, constants ] = parseLine(":happy equ 23")
+      constants["happy"].evaluate().should.eql(23)
+      pline.toString().should.eql("")
       html.should.eql("{label::happy} {directive:equ} {number:23}")
 
     it "parses data", ->
@@ -317,3 +317,46 @@ describe "Parser", ->
       html = trimHtml(line.toHtml())
       html.should.eql("  {identifier:swap}{operator:(}{string:x}{operator:,} {string:y}{operator:)}")
 
+    it "parses a macro form of BRA", ->
+      parser = new d16bunny.Parser()
+      for x in [
+        "#macro bra(addr) {"
+        "  add pc, addr - next"
+        ":next"
+        "}"
+      ] then parser.parseLine(x)
+      line = parser.parseLine("  bra 0x1000")
+      label = line.expanded[1].label
+      (label.match(/bra\.(.*?)\.next/)?).should.equal(true)
+      line.toString().should.eql("{ ADD <28>, <31, (4096 - #{label})>; :#{label}  }")
+
+  describe "parseLine if", ->
+    it "parses a simple if block", ->
+      parser = new d16bunny.Parser()
+      pline = parser.parseLine(".define version 10")
+      pline.toString().should.eql("")
+      pline = parser.parseLine(".if version > 8")
+      pline.toString().should.eql(".if")
+      pline = parser.parseLine("  set a, 30")
+      pline.toString().should.eql("SET <0>, <31, 30>")
+      pline = parser.parseLine(".else")
+      pline.toString().should.eql(".else")
+      pline = parser.parseLine("  set b, 30")
+      pline.toString().should.eql("")
+      pline = parser.parseLine(".endif")
+      pline.toString().should.eql(".endif")
+
+    it "parses a nested if", ->
+      parser = new d16bunny.Parser()
+      pline = parser.parseLine(".define version 10")
+      pline.toString().should.eql("")
+      pline = parser.parseLine(".if version > 8")
+      pline.toString().should.eql(".if")
+      pline = parser.parseLine(".if version <= 10")
+      pline.toString().should.eql(".if")
+      pline = parser.parseLine("  set a, 30")
+      pline.toString().should.eql("SET <0>, <31, 30>")
+      pline = parser.parseLine(".endif")
+      pline.toString().should.eql(".endif")
+      pline = parser.parseLine(".endif")
+      pline.toString().should.eql(".endif")

@@ -76,6 +76,8 @@ class Assembler
       pline = @process i, => parser.parseLine(text, i)
       break if @errors.length >= @errorCount
       rv.push(pline)
+    for k, v of parser.constants
+      @symtab[k] = v
     rv
 
   # # ensure ./$ are set for macro expansions
@@ -105,7 +107,6 @@ class Assembler
     if pline.directive?
       switch pline.directive
         when "org" then return new DataLine(pline.data[0], [])
-        when "define" then @symtab[pline.name] = pline.data[0]
       return null
     if pline.expanded?
       rv = new DataLine(address, [])
