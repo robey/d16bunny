@@ -298,7 +298,7 @@ class Parser
   BinaryRegex: /^0b[01]+/
   LabelRegex: /^([a-zA-Z_.][a-zA-Z_.0-9]*|\$)/
   SymbolRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*/
-  OperatorRegex: /^(\*|\/|%|\+|\-|<<|>>|\&|\^|\|)/
+  OperatorRegex: /^(\*|\/|%|\+|\-|<<|>>|\&|\^|\||<\=|>\=|<|>|==|!=)/
 
   # precedence of supported binary operators in expressions
   Binary:
@@ -312,6 +312,12 @@ class Parser
     '&' : 7
     '^' : 6
     '|' : 5
+    '<' : 4
+    '>' : 4
+    '<=' : 4
+    '>=' : 4
+    '==' : 4
+    '!=' : 4
 
   constructor: ->
     @reset()

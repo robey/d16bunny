@@ -92,6 +92,30 @@ describe "Parser", ->
       e.dependency(cats: 5, dogs: 10)?.should.equal(false)
       html.should.eql("{identifier:cats} {operator:+} {identifier:dogs}")
 
+    it "evaluates <, <=, >, >=", ->
+      e = parseExpression("errors > 9")
+      e.evaluate(errors: 10).should.equal(1)
+      e.evaluate(errors: 3).should.equal(0)
+      e = parseExpression("errors < 9")
+      e.evaluate(errors: 10).should.equal(0)
+      e.evaluate(errors: 3).should.equal(1)
+      e = parseExpression("errors >= 9")
+      e.evaluate(errors: 10).should.equal(1)
+      e.evaluate(errors: 9).should.equal(1)
+      e.evaluate(errors: 3).should.equal(0)
+      e = parseExpression("errors <= 9")
+      e.evaluate(errors: 10).should.equal(0)
+      e.evaluate(errors: 9).should.equal(1)
+      e.evaluate(errors: 3).should.equal(1)
+
+    it "evaluates ==, !=", ->
+      e = parseExpression("errors | 1 == 9")
+      e.evaluate(errors: 8).should.equal(1)
+      e.evaluate(errors: 6).should.equal(0)
+      e = parseExpression("errors | 1 != 9")
+      e.evaluate(errors: 8).should.equal(0)
+      e.evaluate(errors: 6).should.equal(1)
+
   describe "parseOperand", ->
     html = ""
 
