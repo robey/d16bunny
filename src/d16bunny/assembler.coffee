@@ -3,6 +3,7 @@ Dcpu = require("./dcpu").Dcpu
 Expression = require('./expression').Expression
 Parser = require('./parser').Parser
 Operand = require('./parser').Operand
+Macro = require('./parser').Macro
 AssemblerError = require('./errors').AssemblerError
 AssemblerOutput = require('./output').AssemblerOutput
 prettyPrinter = require('./prettyprint').prettyPrinter
@@ -120,9 +121,24 @@ class Assembler
       pline = @process i, => parser.parseLine(text, i)
       break if @errors.length >= @errorCount
       rv.push(pline)
-    for k, v of parser.constants
-      @symtab[k] = v
+    @addConstants(parser.constants)
     rv
+
+  # given a map of (key -> expr), try to resolve them all and add them into
+  # the symtab of (key -> value). throw an error if any are unresolvable.
+  addConstants: (constants) ->
+    unresolved = {}
+    for k, v of constants then unresolved[k] = v
+    while Object.keys(unresolved).length > 0
+      progress = false
+      for k, v of unresolved
+        if not v.dependency(@symtab)?
+          @symtab[k] = v.evaluate(@symtab)
+          delete unresolved[k]
+          progress = true
+      if not progress
+        for k, v of unresolved
+          @process v.lineNumber, => v.evaluate(@symtab)
 
   # # ensure ./$ are set for macro expansions
   # symtab["."] = org
@@ -160,6 +176,7 @@ class Assembler
     ]
     bra: [
       ".macro bra(addr) {"
+      ".error \"Illegal argument to BRA.\""
       "  add pc, addr - .next"
       ":.next"
       "}"
@@ -178,12 +195,14 @@ class Assembler
     @symtab["."] = address
     @symtab["$"] = address
 
-    if pline.label? then @symtab[pline.label] = address
-    if pline.data.length > 0 then return new DataLine(pline, address, pline.data)
     if pline.directive?
       switch pline.directive
-        when "org" then return new DataLine(pline, pline.data[0], [])
-      return null
+        when "org" then address = pline.data.pop()
+    if pline.label? then @symtab[pline.label] = address
+    if pline.data.length > 0
+      data = pline.data.map (expr) =>
+        if not expr.dependency(@symtab)? then expr.evaluate(@symtab) else expr
+      return new DataLine(pline, address, data)
     if pline.expanded?
       rv = new DataLine(pline, address, [])
       rv.expanded = pline.expanded.map (x) =>
@@ -191,9 +210,7 @@ class Assembler
         address = dataLine.address + dataLine.data.length
         dataLine
       return rv
-    if not pline.op?
-      @error(pline.lineNumber, 0, "Internal error: what is this line?")
-      return new DataLine(pline, address, [])
+    if not pline.op? then return new DataLine(pline, address, [])
 
     @optimize(pline)
 
@@ -212,14 +229,14 @@ class Assembler
         if immediate? then data.push(immediate)
     if Dcpu.BinaryOp[pline.op]?
       if pline.operands.length != 2
-        @error(pline.lineNumber, pline.opPos.pos, "#{pline.op.toUpperCase()} requires 2 parameters")
+        pline.fail "#{pline.op.toUpperCase()} requires 2 parameters"
       data[0] = (operandCodes[0] << 10) | (operandCodes[1] << 5) | Dcpu.BinaryOp[pline.op]
     else if Dcpu.SpecialOp[pline.op]?
       if pline.operands.length != 1
-        @error(pline.lineNumber, pline.opPos.pos, "#{pline.op.toUpperCase()} requires 1 parameter")
+        pline.fail "#{pline.op.toUpperCase()} requires 1 parameter"
       data[0] = (operandCodes[0] << 10) | (Dcpu.SpecialOp[pline.op] << 5)
     else
-      @error(pline.lineNumber, pline.opPos.pos, "Unknown instruction: #{pline.op}")
+      pline.fail "Unknown instruction: #{pline.op}"
     new DataLine(pline, address, data)
 
   # ----- optimizations

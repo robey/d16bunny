@@ -5,6 +5,7 @@ exports.Dcpu = dcpu.Dcpu
 parser = require './d16bunny/parser'
 exports.Line = parser.Line
 exports.Operand = parser.Operand
+exports.Macro = parser.Macro
 exports.Parser = parser.Parser
 
 assembler = require './d16bunny/assembler'

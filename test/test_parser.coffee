@@ -188,6 +188,12 @@ describe "Parser", ->
       pline.toString().should.eql("")
       html.should.eql("{comment:; comment.}")
 
+    it "parses trailing comments", ->
+      [ pline, html ] = parseLine("SUB A, [0x1000]            ; 7803 1000")
+      pline.toString().should.eql("SUB <0>, <30, 4096>")
+      html.should.eql("{instruction:SUB} {register:A}{operator:,} {operator:[}{number:0x1000}{operator:]}            " +
+        "{comment:; 7803 1000}")
+
     it "parses a single op", ->
       [ pline, html ] = parseLine("  nop")
       pline.toString().should.eql("NOP")

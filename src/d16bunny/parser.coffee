@@ -191,6 +191,9 @@ class ParsedLine
 
   toHtml: -> @line.toHtml()
 
+  fail: (message) ->
+    throw new AssemblerError(@line.text, @opPos.pos, message)
+
 
 class Operand
   # pos: where it is in the string
@@ -225,14 +228,9 @@ class Operand
   # resolved yet (so we don't know if it can be compacted).
   checkCompact: (symtab) ->
     if @compacting or @code != Operand.Immediate then return false
-    if @expr?
-      if @expr.dependency(symtab)? then return false
-      value = @expr.evaluate(symtab)
-    else if @immediate?
-      value = @immediate
-    else
-      return false
-    if value == 0xffff or value < 31
+    if @expr? and not @resolve(symtab) then return false
+    if not @immediate? then return false
+    if @immediate == 0xffff or @immediate < 31
       @compacting = true
       true
     else
@@ -258,9 +256,7 @@ class Operand
       [ @code, null ]
 
   # attempt to resolve the expression in this operand. returns true on
-  # success, and sets:
-  #   - immediate: (optional) immediate value for this operand
-  #FIXME delete
+  # success, and sets 'immediate'
   resolve: (symtab) ->
     # FIXME move to caller
     #      @debug "  resolve operand: code=#{@code} expr=#{@expr.toString()}"
@@ -268,6 +264,7 @@ class Operand
     if @expr.dependency(symtab)? then return false
     @immediate = @expr.evaluate(symtab) & 0xffff
     delete @expr
+    true
 
   # will this fit into 
   # fit the immediate into a the operand code, if possible.
@@ -291,6 +288,7 @@ Operand.ImmediateInline = 0x20
 class Macro
   constructor: (@name, @parameters) ->
     @textLines = []
+    @error = null
     @parameterMatchers = @parameters.map (p) -> new RegExp("\\b#{p}\\b", "g")
 
 
@@ -398,9 +396,10 @@ class Parser
       name = pline.label
       delete pline.label
       delete pline.op
-      line.scan("equ", Span.Directive)
+      line.scanAssert("equ", Span.Directive)
       line.skipWhitespace()
       @constants[name] = @parseExpression(line)
+      @constants[name].lineNumber = pline.lineNumber
       line.skipWhitespace()
       if not line.finished() then line.fail "Unexpected content after definition"
       return pline
@@ -412,7 +411,7 @@ class Parser
     if pline.op == "org"
       line.rewind(pline.opPos)
       delete pline.op
-      line.scan("org", Span.Directive)
+      line.scanAssert("org", Span.Directive)
       pline.directive = "org"
       @parseOrgDirective(line, pline)
       return pline
@@ -424,9 +423,10 @@ class Parser
       delete pline.op
       name = line.parseWord("Constant name", Span.Identifier)
       line.skipWhitespace()
-      line.scan("=", Span.Operator)
+      line.scanAssert("=", Span.Operator)
       line.skipWhitespace()
       @constants[name] = @parseExpression(line)
+      @constants[name].lineNumber = pline.lineNumber
       line.skipWhitespace()
       if not line.finished() then line.fail "Unexpected content after definition"
       return pline
@@ -436,7 +436,9 @@ class Parser
     while not line.finished()
       pline.operands.push(@parseOperand(line, pline.operands.length == 0))
       line.skipWhitespace()
-      if not line.finished() and line.scan(",", Span.Operator) then line.skipWhitespace()
+      if not line.finished()
+        line.scanAssert(",", Span.Operator)
+        line.skipWhitespace()
 
     pline
 
@@ -600,6 +602,7 @@ class Parser
       when "macro" then @parseMacroDirective(line, pline)
       when "define", "equ" then @parseDefineDirective(line, pline)
       when "org" then @parseOrgDirective(line, pline)
+      when "error" then @parseErrorDirective(line, pline)
       else
         line.rewind(m)
         line.fail "Unknown directive: #{directive}"
@@ -609,6 +612,7 @@ class Parser
     name = line.parseWord("Definition name")
     line.skipWhitespace()
     @constants[name] = @parseExpression(line)
+    @constants[name].lineNumber = pline.lineNumber
     line.skipWhitespace()
     if not line.finished() then @fail "Unexpected content after definition"
 
@@ -672,7 +676,11 @@ class Parser
     saved2 = @lastLabel
     @lastLabel = null
     for text in newTextLines
-      xline = @parseLine(text)
+      try
+        xline = @parseLine(text)
+      catch e
+        if e.type == "AssemblerError" and macro.error? then e.setReason(macro.error)
+        throw e
       if xline.directive?
         line.rewind(m)
         line.fail "Macros can't have directives in them"
@@ -727,7 +735,14 @@ class Parser
     @ifStack.pop()
     if @ifStack.length > 0 then @ignoring = @ifStack[@ifStack.length - 1]
 
+  parseErrorDirective: (line, pline) ->
+    if not @inMacro? then line.fail "Can only use .error inside macros"
+    line.skipWhitespace()
+    @macros[@inMacro].error = line.parseString()
+    if not line.finished() then line.fail "Unexpected content after .error"
+
 
 exports.Line = Line
 exports.Operand = Operand
+exports.Macro = Macro
 exports.Parser = Parser
