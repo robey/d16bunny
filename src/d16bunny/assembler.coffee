@@ -18,8 +18,41 @@ hex = (n) ->
 # in mid-compilation, some items in 'data' may be unresolved equations.
 # 'expanded' may contain an array of DataLine objects expanded from a macro.
 class DataLine
-  constructor: (@address = 0, @data = []) ->
+  constructor: (@pline, @address = 0, @data = []) ->
     @expanded = null
+
+  fail: (message) ->
+    throw new AssemblerError(@pline.line.text, 0, message)
+
+  flatten: ->
+    if not @expanded? then return
+    address = @address
+    if @data.length > 0 then @fail "Internal error: Expanded macro has data"
+    for xline in @expanded
+      if xline.address != address then @fail "Internal error: Disjunct expanded macro"
+      for x in xline.data then if typeof x != 'number' then @fail "Internal error: unresolved expression"
+      @data = @data.concat xline.data
+      address += xline.data.length
+    delete @expanded
+
+  resolve: (symtab) ->
+    changed = false
+    @resolved = true
+    @data = @data.map (item) =>
+      if item instanceof Expression
+        if item.dependency(symtab)?
+          @resolved = false
+          item
+        else
+          changed = true
+          item.evaluate(symtab)
+      else
+        item
+    if @expanded?
+      for xline in @expanded
+        if xline.resolve(symtab) then changed = true
+        if not xline.resolved then @resolved = false
+    changed
 
   toString: ->
     extra = if @expanded?
@@ -104,6 +137,10 @@ class Assembler
   #   - branchFrom: (optional) if this is a relative-branch instruction
 
 
+
+
+
+
   # builtin macros
   builtins:
     jmp: [
@@ -142,13 +179,13 @@ class Assembler
     @symtab["$"] = address
 
     if pline.label? then @symtab[pline.label] = address
-    if pline.data.length > 0 then return new DataLine(address, pline.data)
+    if pline.data.length > 0 then return new DataLine(pline, address, pline.data)
     if pline.directive?
       switch pline.directive
-        when "org" then return new DataLine(pline.data[0], [])
+        when "org" then return new DataLine(pline, pline.data[0], [])
       return null
     if pline.expanded?
-      rv = new DataLine(address, [])
+      rv = new DataLine(pline, address, [])
       rv.expanded = pline.expanded.map (x) =>
         dataLine = @compileLine(x, address)
         address = dataLine.address + dataLine.data.length
@@ -156,37 +193,7 @@ class Assembler
       return rv
     if not pline.op?
       @error(pline.lineNumber, 0, "Internal error: what is this line?")
-      return new DataLine(address, [])
-
-    # convenient aliases
-    # FIXME: use macros for this.
-    # if pline.op == "jmp"
-    #   if pline.operands.length != 1 then @error(pline.lineNumber, pline.opPos.pos, "JMP requires a single parameter")
-    #   pline.op = "set"
-    #   pline.operands.unshift(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
-    # if pline.op == "hlt"
-    #   if pline.operands.length != 0 then @error(pline.lineNumber, pline.opPos.pos, "HLT has no parameters")
-    #   pline.op = "sub"
-    #   pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
-    #   pline.operands.push(new Operand(pline.opPos.pos, Operand.Immediate, Expression::Literal("", 0, 1)))
-    # if pline.op == "ret"
-    #   if pline.operands.length != 0 then @error(pline.lineNumber, pline.opPos.pos, "RET has no parameters")
-    #   pline.op = "set"
-    #   pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
-    #   pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pop"]))
-    # if pline.op == "bra"
-    #   if pline.operands.length != 1 then @error(pline.lineNumber, pline.opPos.pos, "BRA requires a single parameter")
-    #   if line.operands[0].code != Operand::Immediate then @error(pline.lineNumber, line.operands[0].pos, "BRA takes only an immediate value")
-    #   # we'll compute the branch on the 2nd pass.
-    #   pline.op = "add"
-    #   pline.operands.unshift(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
-    #   if pline.operands[1].immediate?
-    #     3
-    #   else if pline.operands[1].expr?
-    #     3
-    #   else
-    #     @error(pline.lineNumber, line.operands[1].pos, "Internal error: missing value")      
-#      return { data: [ line.operands[0] ], org: org, branchFrom: org + 1 }
+      return new DataLine(pline, address, [])
 
     @optimize(pline)
 
@@ -213,7 +220,7 @@ class Assembler
       data[0] = (operandCodes[0] << 10) | (Dcpu.SpecialOp[pline.op] << 5)
     else
       @error(pline.lineNumber, pline.opPos.pos, "Unknown instruction: #{pline.op}")
-    new DataLine(address, data)
+    new DataLine(pline, address, data)
 
   # ----- optimizations
 

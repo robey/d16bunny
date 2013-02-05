@@ -38,22 +38,24 @@ describe "Assembler.compileLine", ->
   describe "builtin macros", ->
     it "compiles jmp", ->
       [ info, symtab ] = compileLine("jmp cout", 0x200, cout: 0x999)
-      info.toString().should.eql("0x0200: { 0x0200: 0x7f81, 0x0999 }")
+      info.flatten()
+      info.toString().should.eql("0x0200: 0x7f81, 0x0999")
 
     it "compiles hlt", ->
       [ info, symtab ] = compileLine("hlt", 0x200)
-      info.toString().should.eql("0x0200: { 0x0200: 0x8b83 }")
+      info.flatten()
+      info.toString().should.eql("0x0200: 0x8b83")
 
     it "compiles ret", ->
       [ info, symtab ] = compileLine("ret", 0x200)
-      info.toString().should.eql("0x0200: { 0x0200: 0x6381 }")
+      info.flatten()
+      info.toString().should.eql("0x0200: 0x6381")
 
     it "compiles bra", ->
       [ info, symtab ] = compileLine("bra exit", 0x200, exit: 0x204)
-      # force branch to be eval'd
-      x = info.expanded[0].data[1].evaluate(symtab)
-      info.expanded[0].data[1] = x
-      info.toString().should.eql("0x0200: { 0x0200: 0x7f82, 0x0002 / 0x0202:  }")
+      info.resolve(symtab)
+      info.flatten()
+      info.toString().should.eql("0x0200: 0x7f82, 0x0002")
 
   it "optimizes sub x, 65530 to add x, 6", ->
     [ info, symtab ] = compileLine("sub x, 65530", 0x200)

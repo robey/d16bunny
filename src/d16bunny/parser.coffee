@@ -172,7 +172,7 @@ class ParsedLine
   constructor: (@line) ->
     @label = null       # label (if any)
     @op = null          # operation (if any)
-    @opPos = 0          # position of operation in text
+    @opPos = null       # position of operation in text
     @directive = null   # directive, if this is a directive instead.
     @name = null        # name (if a constant is being defined)
     @operands = []      # array of expressions
