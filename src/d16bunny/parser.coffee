@@ -202,6 +202,9 @@ class Operand
   constructor: (@pos, @code, @expr) ->
     @immediate = null
     @compacting = false
+    if @expr? and not @expr.dependency()?
+      @immediate = @expr.evaluate() & 0xffff
+      delete @expr
 
   toString: -> if @immediate? then "<#{@code}, #{@immediate}>" else "<#{@code}>"
 

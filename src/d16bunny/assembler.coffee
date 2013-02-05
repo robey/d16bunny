@@ -2,6 +2,7 @@
 Dcpu = require("./dcpu").Dcpu
 Expression = require('./expression').Expression
 Parser = require('./parser').Parser
+Operand = require('./parser').Operand
 AssemblerError = require('./errors').AssemblerError
 AssemblerOutput = require('./output').AssemblerOutput
 prettyPrinter = require('./prettyprint').prettyPrinter
@@ -20,7 +21,7 @@ class DataLine
     @expanded = null
 
   toString: ->
-    "#{hex(@address)}: " + @data.map((x) => hex(x)).join(", ")
+    "#{hex(@address)}: " + @data.map((x) => hex(x)).join(" ")
 
 
 # compile lines of DCPU assembly.
@@ -118,22 +119,36 @@ class Assembler
       return new DataLine(address, [])
 
     # convenient aliases
+    # FIXME: use macros for this.
     if pline.op == "jmp"
-      if pline.operands.length != 1 then @error(pline.lineNumber, pline.opPos, "JMP requires a single parameter")
+      if pline.operands.length != 1 then @error(pline.lineNumber, pline.opPos.pos, "JMP requires a single parameter")
       pline.op = "set"
-      pline.operands.unshift(new Operand(pline.opPos, Dcpu.Specials["pc"]))
+      pline.operands.unshift(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
+    if pline.op == "hlt"
+      if pline.operands.length != 0 then @error(pline.lineNumber, pline.opPos.pos, "HLT has no parameters")
+      pline.op = "sub"
+      pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
+      pline.operands.push(new Operand(pline.opPos.pos, Operand.Immediate, Expression::Literal("", 0, 1)))
+    if pline.op == "ret"
+      if pline.operands.length != 0 then @error(pline.lineNumber, pline.opPos.pos, "RET has no parameters")
+      pline.op = "set"
+      pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
+      pline.operands.push(new Operand(pline.opPos.pos, Dcpu.Specials["pop"]))
+    if pline.op == "bra"
+      if pline.operands.length != 1 then @error(pline.lineNumber, pline.opPos.pos, "BRA requires a single parameter")
+      if line.operands[0].code != Operand::Immediate then @error(pline.lineNumber, line.operands[0].pos, "BRA takes only an immediate value")
+      # we'll compute the branch on the 2nd pass.
+      pline.op = "add"
+      pline.operands.unshift(new Operand(pline.opPos.pos, Dcpu.Specials["pc"]))
+      if pline.operands[1].immediate?
+        3
+      else if pline.operands[1].expr?
+        3
+      else
+        @error(pline.lineNumber, line.operands[1].pos, "Internal error: missing value")      
+#      return { data: [ line.operands[0] ], org: org, branchFrom: org + 1 }
 
-    # if line.op == "hlt"
-    #   if line.operands.length != 0 then @fail line.pos, "HLT has no parameters"
-    #   return @compileLine("sub pc, 1", org)
-    # if line.op == "ret"
-    #   if line.operands.length != 0 then @fail line.pos, "RET has no parameters"
-    #   return @compileLine("set pc, pop", org)
-    # if line.op == "bra"
-    #   if line.operands.length != 1 then @fail line.pos, "BRA requires a single parameter"
-    #   if line.operands[0].code != 0x1f then @fail line.operands[0].loc, "BRA takes only an immediate value"
-    #   # we'll compute the branch on the 2nd pass.
-    #   return { data: [ line.operands[0] ], org: org, branchFrom: org + 1 }
+    @optimize(pline)
 
     data = [ 0 ]
     operandCodes = []
@@ -150,15 +165,29 @@ class Assembler
         if immediate? then data.push(immediate)
     if Dcpu.BinaryOp[pline.op]?
       if pline.operands.length != 2
-        @error(pline.lineNumber, pline.opPos, "#{pline.op.toUpperCase()} requires 2 parameters")
+        @error(pline.lineNumber, pline.opPos.pos, "#{pline.op.toUpperCase()} requires 2 parameters")
       data[0] = (operandCodes[0] << 10) | (operandCodes[1] << 5) | Dcpu.BinaryOp[pline.op]
     else if Dcpu.SpecialOp[pline.op]?
       if pline.operands.length != 1
-        @error(pline.lineNumber, pline.opPos, "#{pline.op.toUpperCase()} requires 1 parameter")
+        @error(pline.lineNumber, pline.opPos.pos, "#{pline.op.toUpperCase()} requires 1 parameter")
       data[0] = (operandCodes[0] << 10) | (Dcpu.SpecialOp[pline.op] << 5)
     else
-      @error(pline.lineNumber, pline.opPos, "Unknown instruction: #{pline.op}")
+      @error(pline.lineNumber, pline.opPos.pos, "Unknown instruction: #{pline.op}")
     new DataLine(address, data)
+
+  # ----- optimizations
+
+  optimize: (pline) ->
+    @optimizeAdd(pline)
+
+  # add/sub by a small negative constant can be flipped
+  optimizeAdd: (pline) ->
+    if pline.op != "add" and pline.op != "sub" then return
+    if pline.operands.length < 2 or not pline.operands[1].immediate? then return
+    if pline.operands[1].immediate < 0xff00 then return
+    pline.op = (if pline.op == "add" then "sub" else "add")
+    pline.operands[1].immediate = 0x10000 - pline.operands[1].immediate
+    @debug "  optimize/add: ", pline
 
 
 

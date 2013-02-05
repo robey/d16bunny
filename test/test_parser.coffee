@@ -144,6 +144,7 @@ describe "Parser", ->
       parseOperand("[a+9]").should.eql("<16, 9>")
       html.should.eql("{operator:[}{register:a}{operator:+}{number:9}{operator:]}")
       parseOperand("[a-2]").should.eql("<16, 65534>")
+      html.should.eql("{operator:[}{register:a}{operator:-}{number:2}{operator:]}")
 
     it "parses pick", ->
       parseOperand("pick leftover - 23", { leftover: 25 }).should.eql("<26, 2>")
