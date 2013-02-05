@@ -13,7 +13,6 @@ parseLine = (s) ->
   parser = new d16bunny.Parser()
   pline = parser.parseLine(s)
   html = trimHtml(pline.toHtml())
-  for op in pline.operands then if op instanceof d16bunny.Operand then op.resolve()
   [ pline, html, parser.constants ]
 
 describe "Parser", ->
@@ -123,7 +122,6 @@ describe "Parser", ->
       p = new d16bunny.Parser()
       line = new d16bunny.Line(s)
       x = p.parseOperand(line, destination)
-      x.resolve(symtab)
       html = trimHtml(line.toHtml())
       x.toString()
 
@@ -171,8 +169,8 @@ describe "Parser", ->
       html.should.eql("{operator:[}{register:a}{operator:-}{number:2}{operator:]}")
 
     it "parses pick", ->
-      parseOperand("pick leftover - 23", { leftover: 25 }).should.eql("<26, 2>")
-      html.should.eql("{register:pick} {identifier:leftover} {operator:-} {number:23}")
+      parseOperand("pick 23").should.eql("<26, 23>")
+      html.should.eql("{register:pick} {number:23}")
 
     it "parses push/pop", ->
       parseOperand("push", {}, true).should.eql("<24>")

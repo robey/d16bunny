@@ -228,9 +228,9 @@ class Operand
   # resolved yet (so we don't know if it can be compacted).
   checkCompact: (symtab) ->
     if @compacting or @code != Operand.Immediate then return false
-    if @expr? and not @resolve(symtab) then return false
-    if not @immediate? then return false
-    if @immediate == 0xffff or @immediate < 31
+    value = @immediateValue()
+    if not value? then return false
+    if value == 0xffff or value < 31
       @compacting = true
       true
     else
@@ -240,11 +240,7 @@ class Operand
   # if there's an expression that can't be resolved yet, it will be returned
   # instead of the immediate.
   pack: (symtab, canCompact=false) ->
-    value = null
-    if @expr? and not @expr.dependency(symtab)?
-      value = @expr.evaluate(symtab)
-    else if @immediate?
-      value = @immediate
+    value = @immediateValue(symtab)
     if @compacting and canCompact and value?
       inline = if value == 0xffff then 0x00 else (0x01 + value)
       [ Operand.ImmediateInline + inline, null ]
@@ -255,27 +251,15 @@ class Operand
     else
       [ @code, null ]
 
-  # attempt to resolve the expression in this operand. returns true on
-  # success, and sets 'immediate'
-  resolve: (symtab) ->
-    # FIXME move to caller
-    #      @debug "  resolve operand: code=#{@code} expr=#{@expr.toString()}"
-    if not @expr? then return true
-    if @expr.dependency(symtab)? then return false
-    @immediate = @expr.evaluate(symtab) & 0xffff
-    delete @expr
-    true
-
-  # will this fit into 
-  # fit the immediate into a the operand code, if possible.
-  #FIXME delete
-  compact: ->
-    if @code == Operand.Immediate and (@immediate == 0xffff or @immediate < 31)
-      @code = 0x20 + (if @immediate == 0xffff then 0x00 else (0x01 + @immediate))
-      delete @immediate
-      true
+  # return the value of the immediate, if it is already known or can be
+  # resolved with the current symtab. nothing is memoized. returns null if
+  # there is no immediate, or it can't be resolved yet.
+  immediateValue: (symtab) ->
+    if @immediate? then return @immediate
+    if @expr? and not @expr.dependency(symtab)?
+      @expr.evaluate(symtab)
     else
-      false
+      null
 
 Operand.Register = 0x00
 Operand.RegisterDereference = 0x08
