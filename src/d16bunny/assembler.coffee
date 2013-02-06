@@ -100,10 +100,13 @@ class Assembler
     @logger(lineNumber, pos, reason)
     @errors.push([ lineNumber, pos, reason ])
 
+  giveUp: ->
+    @errors.length >= @maxErrors
+
   # internal: call a function, catching and reporting assembler errors.
   # returns null on error (or if there have been too many errors already).
   process: (lineNumber, f) ->
-    if @errors.length >= @errorCount then return null
+    if @giveUp() then return null
     try
       f()
     catch e
@@ -111,20 +114,58 @@ class Assembler
       pos = if e.pos? then e.pos else 0
       reason = if e.reason? then e.reason else e.toString()
       @error(lineNumber, pos. reason)
-      if @errors.length >= @errorCount
-        @error(lineNumber, pos, "Too many errors; giving up.")
+      if @giveUp() then @error(lineNumber, pos, "Too many errors; giving up.")
       null
     
-  parse: (textLines, maxErrors = 10) ->
+  compile: (textLines, address = 0) ->
+    plines = @parse(textLines)
+    if @giveUp then return new AssemblerOutput(@errors, [], @symtab)
+    for pline in plines then @validate(pline)
+    if @giveUp then return new AssemblerOutput(@errors, [], @symtab)
+    dlines = plines.map (pline) =>
+      dline = @process pline.lineNumber, => @compileLine(pline, address)
+      if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
+      address = dline.address
+      dline
+
+
+
+    @infos = []
+    errorCount = 0
+    giveUp = false
+    defaultValue = { org: org, data: [] }
+    process = (lineno, f) => 3
+    # pass 1:
+    for i in [0 ... lines.length]
+      line = lines[i]
+      info = process i, => @compileLine(line, org)
+      @infos.push(info)
+      org = info.org + info.data.length
+    # pass 2:
+    for i in [0 ... lines.length]
+      info = @infos[i]
+      process i, => @resolveLine(info)
+      # if anything failed, fill it in with zeros.
+      for j in [0 ... info.data.length]
+        if typeof info.data[j] == 'object'
+          info.data[j] = 0
+    @lastOrg = org
+    new AssemblerOutput(errorCount, @infos, @symtab)
+
+  # ----- parse phase
+
+  parse: (textLines) ->
     parser = new Parser()
     parser.debugger = @debugger
     @addBuiltinMacros(parser)
     plines = []
     for text, i in textLines
       pline = @process i, => parser.parseLine(text, i)
-      break if @errors.length >= @errorCount
+      break if @giveUp()
       plines.push(pline)
     @addConstants(parser.constants)
+    # resolve any expressions that can be taken care of by the constants
+    for pline in plines then pline.resolve(@symtab)
     plines
 
   # given a map of (key -> expr), try to resolve them all and add them into
@@ -143,50 +184,30 @@ class Assembler
         for k, v of unresolved
           @process v.lineNumber, => v.evaluate(@symtab)
 
-  # compile a line of code at a given address.
-  # fields that can't be resolved yet will be left as expression trees, but the data size will be
-  # computed.
-  # returns an object with:
-  #   - data: compiled output, made up either of words or unresolved expression trees
-  #   - org: the memory location (pc) where this data starts
-  #   - branchFrom: (optional) if this is a relative-branch instruction
-
-
-
-
-
-
-  # builtin macros
-  builtins:
-    jmp: [
-      ".macro jmp(addr) {"
-      "  set pc, addr"
-      "}"
-    ]
-    hlt: [
-      ".macro hlt {"
-      "  sub pc, 1"
-      "}"
-    ]
-    ret: [
-      ".macro ret {"
-      "  set pc, pop"
-      "}"
-    ]
-    bra: [
-      ".macro bra(addr) {"
-      ".error \"Illegal argument to BRA.\""
-      "  add pc, addr - .next"
-      ":.next"
-      "}"
-    ]
-
   addBuiltinMacros: (parser) ->
-    for name, textLines of @builtins
-      for text, lineNumber in textLines
-        parser.parseLine(text, lineNumber)
+    for text, lineNumber in BuiltinMacros.split("\n")
+      parser.parseLine(text, lineNumber)
 
-  # attempt to turn a parsed line into a chunk of words.
+  # ----- validate phase
+
+  validateLine: (pline) ->
+    data = [ 0 ]
+    operandCodes = []
+    if Dcpu.BinaryOp[pline.op]?
+      if pline.operands.length != 2
+        pline.fail "#{pline.op.toUpperCase()} requires 2 arguments"
+    else if Dcpu.SpecialOp[pline.op]?
+      if pline.operands.length != 1
+        pline.fail "#{pline.op.toUpperCase()} requires 1 argument"
+    else
+      pline.fail "Unknown instruction: #{pline.op}"
+
+  # ----- compile phase
+
+  # attempt to turn a ParsedLine into a DataLine.
+  # the ParsedLine is left untouched unless an immediate value is newly
+  # compactible, in which case @shrunk is set, and the ParsedLine is
+  # memoized with the compaction.
   compileLine: (pline, address) ->
     @debug "+ compiling @ ", address, ": ", pline
 
@@ -200,7 +221,7 @@ class Assembler
     if pline.label? then @symtab[pline.label] = address
     if pline.data.length > 0
       data = pline.data.map (expr) =>
-        if expr.resolvable(@symtab) then expr.evaluate(@symtab) else expr
+        if (expr instanceof Expression) and expr.resolvable(@symtab) then expr.evaluate(@symtab) else expr
       return new DataLine(pline, address, data)
     if pline.expanded?
       rv = new DataLine(pline, address, [])
@@ -211,31 +232,27 @@ class Assembler
       return rv
     if not pline.op? then return new DataLine(pline, address, [])
 
-    @optimize(pline)
+    pline = @optimize(pline)
 
     data = [ 0 ]
     operandCodes = []
     if pline.operands.length > 0
       for i in [pline.operands.length - 1 .. 0]
-        x = pline.operands[i]
+        operand = pline.operands[i]
         canCompact = (i == pline.operands.length - 1)
         # do any easy compactions.
-        if canCompact and x.checkCompact(@symtab)
-          @debug "  compacted ", x
+        if canCompact and operand.checkCompact(@symtab)
+          @debug "  compacted ", operand
           @shrunk = true
-        [ code, immediate ] = x.pack(@symtab, canCompact)
+        [ code, immediate ] = operand.pack(@symtab, canCompact)
         operandCodes.push(code)
         if immediate? then data.push(immediate)
     if Dcpu.BinaryOp[pline.op]?
-      if pline.operands.length != 2
-        pline.fail "#{pline.op.toUpperCase()} requires 2 parameters"
       data[0] = (operandCodes[0] << 10) | (operandCodes[1] << 5) | Dcpu.BinaryOp[pline.op]
     else if Dcpu.SpecialOp[pline.op]?
-      if pline.operands.length != 1
-        pline.fail "#{pline.op.toUpperCase()} requires 1 parameter"
       data[0] = (operandCodes[0] << 10) | (Dcpu.SpecialOp[pline.op] << 5)
-    else
-      pline.fail "Unknown instruction: #{pline.op}"
+
+
     new DataLine(pline, address, data)
 
   # ----- optimizations
@@ -245,12 +262,14 @@ class Assembler
 
   # add/sub by a small negative constant can be flipped
   optimizeAdd: (pline) ->
-    if pline.op != "add" and pline.op != "sub" then return
-    if pline.operands.length < 2 or not pline.operands[1].immediate? then return
-    if pline.operands[1].immediate < 0xff00 then return
-    pline.op = (if pline.op == "add" then "sub" else "add")
-    pline.operands[1].immediate = 0x10000 - pline.operands[1].immediate
-    @debug "  optimize/add: ", pline
+    if pline.op != "add" and pline.op != "sub" then return pline
+    value = pline.operands[1].immediateValue(@symtab)
+    if not value? or value < 0xff00 then return pline
+    newline = pline.clone()
+    newline.op = (if pline.op == "add" then "sub" else "add")
+    newline.operands[1].immediate = 0x10000 - value
+    @debug "  optimize/add: ", newline
+    newline
 
 
 
@@ -292,78 +311,6 @@ class Assembler
     new AssemblerOutput(errorCount, @infos, @symtab)
 
 
-
-
-  xcompileParsedLine: (line, org) ->
-    @debug "  parsed line: ", line
-    # ensure ./$ are set for macro expansions
-    @symtab["."] = org
-    @symtab["$"] = org
-    if line.label? then @symtab[line.label] = org
-    if line.data? then return { data: line.data, org: org }
-    if line.expanded?
-      info = { data: [], org: org }
-      for x in line.expanded
-        @debug "  expand macro: ", x
-        if x.op? and x.op == "org"
-          @fail line.pos, "Sorry, you can't use ORG in a macro."
-        newinfo = @compileParsedLine(x, org)
-        info.data = info.data.concat(newinfo.data)
-        org += newinfo.data.length
-        @debug "  finished macro expansion: ", newinfo
-      return info
-    if not line.op? then return { data: [], org: org }
-
-    if line.op == "org"
-      if line.operands.length != 1 then @fail line.pos, "ORG requires a single parameter"
-      if not line.operands[0].expr.resolvable(@symtab)
-        @fail line.operands[0].pos, "ORG must be a constant expression with no forward references"
-      info = { org: line.operands[0].expr.evaluate(@symtab), data: [] }
-      if line.label? then @symtab[line.label] = info.org
-      return info
-    if line.op == "equ"
-      if line.operands.length != 1 then @fail line.pos, "EQU requires a single parameter"
-      if not line.operands[0].expr.resolvable(@symtab)
-        @fail line.operands[0].pos, "EQU must be a constant expression with no forward references"
-      if not line.label? then @fail line.pos, "EQU requires a label"
-      @symtab[line.label] = line.operands[0].expr.evaluate(@symtab)
-      return { org: org, data: [] }
-
-    # convenient aliases
-    if line.op == "jmp"
-      if line.operands.length != 1 then @fail line.pos, "JMP requires a single parameter"
-      line.op = "set"
-      @setText("pc")
-      line.operands.unshift(@parseOperand(true))
-      return @compileParsedLine(line, org)
-    if line.op == "hlt"
-      if line.operands.length != 0 then @fail line.pos, "HLT has no parameters"
-      return @compileLine("sub pc, 1", org)
-    if line.op == "ret"
-      if line.operands.length != 0 then @fail line.pos, "RET has no parameters"
-      return @compileLine("set pc, pop", org)
-    if line.op == "bra"
-      if line.operands.length != 1 then @fail line.pos, "BRA requires a single parameter"
-      if line.operands[0].code != 0x1f then @fail line.operands[0].loc, "BRA takes only an immediate value"
-      # we'll compute the branch on the 2nd pass.
-      return { data: [ line.operands[0] ], org: org, branchFrom: org + 1 }
-
-    info = { data: [ 0 ], org: org }
-    if line.operands.length > 0
-      for i in [line.operands.length - 1 .. 0]
-        x = line.operands[i]
-        @resolveOperand(x, i == line.operands.length - 1)
-        if x.expr? then info.data.push(x.expr)
-        if x.immediate? then info.data.push(x.immediate)
-    if Dcpu.BinaryOp[line.op]?
-      if line.operands.length != 2 then @fail line.pos, line.op.toUpperCase() + " requires 2 parameters"
-      info.data[0] = (line.operands[1].code << 10) | (line.operands[0].code << 5) | Dcpu.BinaryOp[line.op]
-    else if Dcpu.SpecialOp[line.op]?
-      if line.operands.length != 1 then @fail line.pos, line.op.toUpperCase() + " requires 1 parameter"
-      info.data[0] = (line.operands[0].code << 10) | (Dcpu.SpecialOp[line.op] << 5)
-    else
-      @fail line.pos, "Unknown instruction: " + line.op
-    info
 
   # force resolution of any unresolved expressions.
   resolveLine: (info) ->

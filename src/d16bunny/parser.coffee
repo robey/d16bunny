@@ -30,12 +30,31 @@ class ParsedLine
       @operands.map((x) => " " + x.toString()).join(",") +
       if @expanded? then ("{" + @expanded.map((x) => " " + x.toString()).join(";") + " }") else ""
 
+  clone: ->
+    rv = new ParsedLine(@line)
+    rv.label = @label
+    rv.op = @op
+    rv.opPos = @opPos
+    rv.directive = @directive
+    rv.name = @name
+    rv.operands = @operands.map (x) -> x.clone()
+    rv.data = @data.map (x) -> x
+    rv.expanded = if @expanded? then @expanded.map((x) -> x.clone()) else null
+    rv
+    
   toHtml: -> @line.toHtml()
 
   toDebug: -> @line.toDebug()
 
   fail: (message) ->
     throw new AssemblerError(@line.text, @opPos.pos, message)
+
+  # resolve (permanently) any expressions that can be resolved by this
+  # symtab. this is used as an optimization to take care of constants before
+  # iterating over labels that move.
+  resolve: (symtab) ->
+    for x in @operands then x.resolve(symtab)
+    @data = @data.map (x) => if (x instanceof Expression) and x.resolvable(symtab) then x.evaluate(symtab) else x
 
 
 class Macro

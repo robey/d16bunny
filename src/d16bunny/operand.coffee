@@ -9,9 +9,7 @@ class Operand
   constructor: (@pos, @code, @expr) ->
     @immediate = null
     @compacting = false
-    if @expr? and @expr.resolvable()
-      @immediate = @expr.evaluate() & 0xffff
-      delete @expr
+    @resolve()
 
   toString: ->
     if @immediate?
@@ -21,8 +19,21 @@ class Operand
     else
       "<#{@code}>"
 
+  clone: ->
+    rv = new Operand(@pos, @code, @expr)
+    rv.immediate = @immediate
+    rv.compacting = @compacting
+    rv
+  
   resolvable: (symtab={}) ->
     if @expr? then @expr.resolvable(symtab) else true
+
+  # resolve (permanently) any expressions that can be resolved by this
+  # symtab. this is used as an optimization to take care of early constants.
+  resolve: (symtab={}) ->
+    if @expr? and @expr.resolvable()
+      @immediate = @expr.evaluate() & 0xffff
+      delete @expr
 
   # returns true if the operand is newly compactible.
   # the compactible-ness is memoized, but resolved expressions are not.
