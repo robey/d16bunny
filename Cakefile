@@ -39,7 +39,10 @@ assemblerFiles = [
   "dcpu",
   "errors",
   "expression",
+  "line",
+  "operand",
   "output",
+  "parser",
   "prettyprint"
 ]
 
