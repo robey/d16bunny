@@ -1,17 +1,18 @@
 class AssemblerOutput
-  # errorCount: number of errors discovered (reported through @logger)
+  # errors: array of errors discovered (and previously reported through
+  #   the @logger attached to the Assembler)
   # lines: the list of compiled line objects. each compiled line is:
   #   - org: memory address of this line
   #   - data: words of compiled data (length may be 0, or quite large for
   #     expanded macros or "dat" blocks)
   # symtab: map of named variables/labels
-  constructor: (@errorCount, @lines, @symtab) ->
+  constructor: (@errors, @lines, @symtab) ->
     @lineMap = []
     for i in [0 ... @lines.length]
       line = @lines[i]
       size = line.data.length
       continue if size == 0
-      @lineMap.push(org: line.org, end: line.org + size, lineno: i)
+      @lineMap.push(org: line.address, end: line.address + size, lineno: i)
     @lineMap.sort((a, b) -> if a.org > b.org then 1 else -1)
 
   # pack the compiled line data into an array of contiguous memory blocks,
@@ -22,7 +23,7 @@ class AssemblerOutput
   # the blocks are sorted in org order.
   pack: ->
     if @cachedPack? then return @cachedPack
-    if @errorCount > 0 or @lines.length == 0 then return []
+    if @errors.length > 0 or @lines.length == 0 then return []
     i = 0
     end = @lines.length
     blocks = []

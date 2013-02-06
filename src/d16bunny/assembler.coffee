@@ -119,38 +119,23 @@ class Assembler
     
   compile: (textLines, address = 0) ->
     plines = @parse(textLines)
-    if @giveUp then return new AssemblerOutput(@errors, [], @symtab)
-    for pline in plines then @validate(pline)
-    if @giveUp then return new AssemblerOutput(@errors, [], @symtab)
+    if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
+    for pline in plines then @validateLine(pline)
+    if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
     dlines = plines.map (pline) =>
       dline = @process pline.lineNumber, => @compileLine(pline, address)
+      @debug "  data: ", dline
       if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
-      address = dline.address
+      if dline? then address = dline.address + dline.data.length
       dline
-
-
-
-    @infos = []
-    errorCount = 0
-    giveUp = false
-    defaultValue = { org: org, data: [] }
-    process = (lineno, f) => 3
-    # pass 1:
-    for i in [0 ... lines.length]
-      line = lines[i]
-      info = process i, => @compileLine(line, org)
-      @infos.push(info)
-      org = info.org + info.data.length
-    # pass 2:
-    for i in [0 ... lines.length]
-      info = @infos[i]
-      process i, => @resolveLine(info)
+    # force all unresolved expressions, because the symtab is now complete.
+    for dline in dlines
+      @process dline.pline.lineNumber, => @resolveLine(dline)
       # if anything failed, fill it in with zeros.
-      for j in [0 ... info.data.length]
-        if typeof info.data[j] == 'object'
-          info.data[j] = 0
-    @lastOrg = org
-    new AssemblerOutput(errorCount, @infos, @symtab)
+      for i in [0 ... dline.data.length]
+        if typeof dline.data[i] == "object" then dline.data[i] = 0
+#    if @errors.length == 0
+    new AssemblerOutput(@errors, dlines, @symtab)
 
   # ----- parse phase
 
@@ -191,8 +176,7 @@ class Assembler
   # ----- validate phase
 
   validateLine: (pline) ->
-    data = [ 0 ]
-    operandCodes = []
+    if not pline.op? then return
     if Dcpu.BinaryOp[pline.op]?
       if pline.operands.length != 2
         pline.fail "#{pline.op.toUpperCase()} requires 2 arguments"
@@ -232,6 +216,7 @@ class Assembler
       return rv
     if not pline.op? then return new DataLine(pline, address, [])
 
+    # optimizations are allowed to cook up a new ParsedLine just for this round.
     pline = @optimize(pline)
 
     data = [ 0 ]
@@ -252,8 +237,14 @@ class Assembler
     else if Dcpu.SpecialOp[pline.op]?
       data[0] = (operandCodes[0] << 10) | (Dcpu.SpecialOp[pline.op] << 5)
 
-
     new DataLine(pline, address, data)
+
+  resolveLine: (dline) ->
+    @debug "  resolve: ", dline
+    @symtab["."] = dline.address
+    @symtab["."] = dline.address
+    for i in [0 ... dline.data.length]
+      if dline.data[i] instanceof Expression then dline.data[i] = dline.data[i].evaluate(@symtab)
 
   # ----- optimizations
 
@@ -287,7 +278,7 @@ class Assembler
   #
   # the compiler will try to continue if there are errors, to greedily find
   # as many of the errors as it can. after 'maxErrors', it will stop.
-  compile: (lines, org = 0, maxErrors = 10) ->
+  xxxcompile: (lines, org = 0, maxErrors = 10) ->
     @infos = []
     errorCount = 0
     giveUp = false
@@ -313,7 +304,7 @@ class Assembler
 
 
   # force resolution of any unresolved expressions.
-  resolveLine: (info) ->
+  xxxresolveLine: (info) ->
     @symtab["."] = info.org
     if info.branchFrom
       # finally resolve (short) relative branch
@@ -344,7 +335,7 @@ class Assembler
   #
   # the compiler will try to continue if there are errors, to greedily find
   # as many of the errors as it can. after 'maxErrors', it will stop.
-  compile: (lines, org = 0, maxErrors = 10) ->
+  xxxcompile: (lines, org = 0, maxErrors = 10) ->
     @infos = []
     @continueCompile(lines, org, maxErrors)
 
@@ -391,4 +382,3 @@ class Assembler
     new AssemblerOutput(errorCount, @infos, @symtab)
 
 exports.Assembler = Assembler
-exports.AssemblerError = AssemblerError

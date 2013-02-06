@@ -41,7 +41,7 @@ class ParsedLine
     rv.data = @data.map (x) -> x
     rv.expanded = if @expanded? then @expanded.map((x) -> x.clone()) else null
     rv
-    
+
   toHtml: -> @line.toHtml()
 
   toDebug: -> @line.toDebug()
@@ -185,7 +185,7 @@ class Parser
 
     if @inMacro
       if line.scan("}", Span.Directive)
-        @debug "  finished defining macro", @inMacro
+        @debug "  finished defining macro ", @inMacro
         @inMacro = false
         line.skipWhitespace()
         if not line.finished() then line.fail "Unexpected content after end of macro"
