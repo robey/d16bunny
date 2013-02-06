@@ -105,28 +105,6 @@ describe "Assembler.compileLine", ->
     [ dline, symtab ] = compileLine("set 1, a", 0)
     dline.toString().should.eql("0x0000: 0x03e1, 0x0001")
 
-describe "Assembler.validate", ->
-  validateLine = (text, address, symbols={}, debugging=false) ->
-    a = new d16bunny.Assembler(logger)
-    a.symtab = symbols
-    parser = new d16bunny.Parser()
-    a.addBuiltinMacros(parser)
-    if symbols.debugging
-      a.debugger = console.log
-      parser.debugger = console.log
-      console.log "-----"
-    a.validateLine(parser.parseLine(text))
-
-  it "disallows an unknown opcode", ->
-    (-> validateLine("qxq 9", 0x200)).should.throw(/qxq/)
-
-  it "requires binary operations to have 2 arguments", ->
-    (-> validateLine("add x", 0x200)).should.throw(/requires 2 arguments/)
-    (-> validateLine("add x, y, z", 0x200)).should.throw(/requires 2 arguments/)
-
-  it "requires special operations to have 1 argument", ->
-    (-> validateLine("jsr", 0x200)).should.throw(/requires 1 argument/)
-    (-> validateLine("jsr x, y", 0x200)).should.throw(/requires 1 argument/)
 
 # describe "Assembler.resolveLine", ->
 #   it "resolves a short relative branch", ->

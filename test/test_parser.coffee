@@ -193,17 +193,17 @@ describe "Parser", ->
         "{comment:; 7803 1000}")
 
     it "parses a single op", ->
-      [ pline, html ] = parseLine("  nop")
-      pline.toString().should.eql("NOP")
-      html.should.eql("  {instruction:nop}")
+      [ pline, html ] = parseLine("  hwi 0")
+      pline.toString().should.eql("HWI <31, 0>")
+      html.should.eql("  {instruction:hwi} {number:0}")
 
     it "parses a labeled line", ->
       [ pline, html ] = parseLine(":start")
       pline.toString().should.eql(":start ")
       html.should.eql("{label::start}")
-      [ pline, html ] = parseLine(":start  nop")
-      pline.toString().should.eql(":start NOP")
-      html.should.eql("{label::start}  {instruction:nop}")
+      [ pline, html ] = parseLine(":start  hwi 0")
+      pline.toString().should.eql(":start HWI <31, 0>")
+      html.should.eql("{label::start}  {instruction:hwi} {number:0}")
 
     it "parses a line with operands", ->
       [ pline, html ] = parseLine(":last set [a], ','")
@@ -256,6 +256,17 @@ describe "Parser", ->
       pline.toString().should.eql(".org")
       pline.data.should.eql([ 3 ])
       html.should.eql("  {directive:org} {number:3}")
+
+  it "disallows an unknown opcode", ->
+    (-> parseLine("qxq 9", 0x200)).should.throw(/qxq/)
+
+  it "requires binary operations to have 2 arguments", ->
+    (-> parseLine("add x", 0x200)).should.throw(/requires 2 arguments/)
+    (-> parseLine("add x, y, z", 0x200)).should.throw(/requires 2 arguments/)
+
+  it "requires special operations to have 1 argument", ->
+    (-> parseLine("jsr", 0x200)).should.throw(/requires 1 argument/)
+    (-> parseLine("jsr x, y", 0x200)).should.throw(/requires 1 argument/)
 
   describe "parseLine if", ->
     it "parses a simple if block", ->

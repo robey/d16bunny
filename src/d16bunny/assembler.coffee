@@ -114,8 +114,6 @@ class Assembler
   compile: (textLines, address = 0) ->
     plines = @parse(textLines)
     if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
-    for pline in plines then @validateLine(pline)
-    if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
     dlines = plines.map (pline) =>
       dline = @process pline.lineNumber, => @compileLine(pline, address)
       @debug "  data: ", dline
@@ -236,7 +234,7 @@ class Assembler
   resolveLine: (dline) ->
     @debug "  resolve: ", dline
     @symtab["."] = dline.address
-    @symtab["."] = dline.address
+    @symtab["$"] = dline.address
     dline.resolve(@symtab)
     dline.flatten()
 

@@ -258,6 +258,14 @@ class Parser
       if not line.finished()
         line.scanAssert(",", Span.Operator)
         line.skipWhitespace()
+    if Dcpu.BinaryOp[pline.op]?
+      if pline.operands.length != 2
+        pline.fail "#{pline.op.toUpperCase()} requires 2 arguments"
+    else if Dcpu.SpecialOp[pline.op]?
+      if pline.operands.length != 1
+        pline.fail "#{pline.op.toUpperCase()} requires 1 argument"
+    else
+      pline.fail "Unknown instruction: #{pline.op}"
 
     pline
 
