@@ -65,6 +65,31 @@ class DataLine
     address += @data.length
     address
 
+# pack a sequence of DataLine objects (one per line) into a smaller array.
+# in theory, each new DataLine object should have all the data between two
+# ORG changes. the new DataLine array is sorted in address order. ParsedLine
+# information is removed.
+DataLine.pack = (dlines) -> 
+  i = 0
+  end = dlines.length
+  blocks = []
+  while i < end
+    runStart = i
+    addressStart = address = dlines[i].address
+    while i < end and dlines[i].address == address
+      address += dlines[i].data.length
+      i++
+    data = new Array(address - addressStart)
+    n = 0
+    for j in [runStart...i]
+      k = dlines[j].data.length
+      data[n ... n + k] = dlines[j].data
+      n += k
+    if data.length > 0 then blocks.push(new DataLine(null, addressStart, data))
+  blocks.sort((a, b) -> a.address > b.address)
+  blocks
+
+
 # compile lines of DCPU assembly.
 class Assembler
   # logger will be used to report errors: logger(line#, pos, message)
@@ -165,19 +190,6 @@ class Assembler
     for text, lineNumber in BuiltinMacros.split("\n")
       parser.parseLine(text, lineNumber)
 
-  # ----- validate phase
-
-  validateLine: (pline) ->
-    if not pline.op? then return
-    if Dcpu.BinaryOp[pline.op]?
-      if pline.operands.length != 2
-        pline.fail "#{pline.op.toUpperCase()} requires 2 arguments"
-    else if Dcpu.SpecialOp[pline.op]?
-      if pline.operands.length != 1
-        pline.fail "#{pline.op.toUpperCase()} requires 1 argument"
-    else
-      pline.fail "Unknown instruction: #{pline.op}"
-
   # ----- compile phase
 
   # attempt to turn a ParsedLine into a DataLine.
@@ -257,62 +269,6 @@ class Assembler
 
 
 
-  # do a full two-stage compile of this source.
-  # returns an AssemblerOutput object with:
-  #   - errorCount: number of errors discovered (reported through @logger)
-  #   - lines: the list of compiled line objects. each compiled line is:
-  #     - org: memory address of this line
-  #     - data: words of compiled data (length may be 0, or quite large for
-  #       expanded macros or "dat" blocks)
-  # the 'lines' output array will always be the same length as the 'lines'
-  # input array, but the 'data' field on some lines may be empty if no code
-  # was compiled for that line, or there were too many errors.
-  #
-  # the compiler will try to continue if there are errors, to greedily find
-  # as many of the errors as it can. after 'maxErrors', it will stop.
-  xxxcompile: (lines, org = 0, maxErrors = 10) ->
-    @infos = []
-    errorCount = 0
-    giveUp = false
-    defaultValue = { org: org, data: [] }
-    process = (lineno, f) => 3
-    # pass 1:
-    for i in [0 ... lines.length]
-      line = lines[i]
-      info = process i, => @compileLine(line, org)
-      @infos.push(info)
-      org = info.org + info.data.length
-    # pass 2:
-    for i in [0 ... lines.length]
-      info = @infos[i]
-      process i, => @resolveLine(info)
-      # if anything failed, fill it in with zeros.
-      for j in [0 ... info.data.length]
-        if typeof info.data[j] == 'object'
-          info.data[j] = 0
-    @lastOrg = org
-    new AssemblerOutput(errorCount, @infos, @symtab)
-
-
-
-  # force resolution of any unresolved expressions.
-  xxxresolveLine: (info) ->
-    @symtab["."] = info.org
-    if info.branchFrom
-      # finally resolve (short) relative branch
-      @debug "  resolve bra: ", info
-      dest = info.data[0].expr.evaluate(@symtab)
-      offset = info.branchFrom - dest
-      if offset < -30 or offset > 30
-        @fail info.data[0].pos, "Short branch can only move 30 words away (here: " + Math.abs(offset) + ")"
-      opcode = if offset < 0 then Dcpu.BinaryOp.add else Dcpu.BinaryOp.sub
-      info.data[0] = ((Math.abs(offset) + 0x21) << 10) | (Dcpu.Specials.pc << 5) | opcode
-      delete info.branchFrom
-    @debug "  resolve: ", info
-    for i in [0 ... info.data.length]
-      if typeof info.data[i] == 'object'
-        info.data[i] = info.data[i].evaluate(@symtab)
-    info
 
   # do a full two-stage compile of this source.
   # returns an AssemblerOutput object with:
@@ -373,4 +329,6 @@ class Assembler
     @lastOrg = org
     new AssemblerOutput(errorCount, @infos, @symtab)
 
+
+exports.DataLine = DataLine
 exports.Assembler = Assembler

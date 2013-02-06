@@ -13,6 +13,7 @@ exports.Macro = parser.Macro
 exports.Parser = parser.Parser
 
 assembler = require './d16bunny/assembler'
+exports.DataLine = assembler.DataLine
 exports.Assembler = assembler.Assembler
 
 prettyprint = require "./d16bunny/prettyprint"
