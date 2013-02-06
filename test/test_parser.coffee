@@ -86,9 +86,9 @@ describe "Parser", ->
     it "throws an exception for unknown labels", ->
       e = parseExpression("cats + dogs")
       (-> e.evaluate(cats: 5)).should.throw(/resolve/)
-      e.dependency().should.equal("cats")
-      e.dependency(cats: 5).should.equal("dogs")
-      e.dependency(cats: 5, dogs: 10)?.should.equal(false)
+      e.resolvable().should.equal(false)
+      e.resolvable(cats: 5).should.equal(false)
+      e.resolvable(cats: 5, dogs: 10).should.equal(true)
       html.should.eql("{identifier:cats} {operator:+} {identifier:dogs}")
 
     it "evaluates <, <=, >, >=", ->

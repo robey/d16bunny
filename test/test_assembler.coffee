@@ -88,11 +88,6 @@ describe "Assembler.compileLine", ->
     dline.flatten()
     dline.toString().should.eql("0x0200: 0x1301, 0x1481, 0x60a1")
 
-#   it "handles trailing comments", ->
-#     a = new d16bunny.Assembler(logger)
-#     dline = a.compileLine("SUB A, [0x1000]            ; 7803 1000", 0x200)
-#     dline.data.should.eql([ 0x7803, 0x1000 ])
-
   it "handles a single data object", ->
     [ dline, symtab ] = compileLine(":data DAT \"hello\"   ; hello", 0x200)
     dline.toString().should.eql("0x0200: 0x0068, 0x0065, 0x006c, 0x006c, 0x006f")

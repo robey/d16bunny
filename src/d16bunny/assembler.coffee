@@ -41,12 +41,12 @@ class DataLine
     @resolved = true
     @data = @data.map (item) =>
       if item instanceof Expression
-        if item.dependency(symtab)?
-          @resolved = false
-          item
-        else
+        if item.resolvable(symtab)
           changed = true
           item.evaluate(symtab)
+        else
+          @resolved = false
+          item
       else
         item
     if @expanded?
@@ -116,13 +116,13 @@ class Assembler
     parser = new Parser()
     parser.debugger = @debugger
     @addBuiltinMacros(parser)
-    rv = []
+    plines = []
     for text, i in textLines
       pline = @process i, => parser.parseLine(text, i)
       break if @errors.length >= @errorCount
-      rv.push(pline)
+      plines.push(pline)
     @addConstants(parser.constants)
-    rv
+    plines
 
   # given a map of (key -> expr), try to resolve them all and add them into
   # the symtab of (key -> value). throw an error if any are unresolvable.
@@ -132,17 +132,13 @@ class Assembler
     while Object.keys(unresolved).length > 0
       progress = false
       for k, v of unresolved
-        if not v.dependency(@symtab)?
+        if v.resolvable(@symtab)
           @symtab[k] = v.evaluate(@symtab)
           delete unresolved[k]
           progress = true
       if not progress
         for k, v of unresolved
           @process v.lineNumber, => v.evaluate(@symtab)
-
-  # # ensure ./$ are set for macro expansions
-  # symtab["."] = org
-  # symtab["$"] = org
 
   # compile a line of code at a given address.
   # fields that can't be resolved yet will be left as expression trees, but the data size will be
@@ -191,7 +187,7 @@ class Assembler
   compileLine: (pline, address) ->
     @debug "+ compiling @ ", address, ": ", pline
 
-    # FIXME
+    # allow . and $ to refer to the current address
     @symtab["."] = address
     @symtab["$"] = address
 
@@ -201,7 +197,7 @@ class Assembler
     if pline.label? then @symtab[pline.label] = address
     if pline.data.length > 0
       data = pline.data.map (expr) =>
-        if not expr.dependency(@symtab)? then expr.evaluate(@symtab) else expr
+        if expr.resolvable(@symtab) then expr.evaluate(@symtab) else expr
       return new DataLine(pline, address, data)
     if pline.expanded?
       rv = new DataLine(pline, address, [])

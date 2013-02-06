@@ -9,7 +9,7 @@ class Operand
   constructor: (@pos, @code, @expr) ->
     @immediate = null
     @compacting = false
-    if @expr? and not @expr.dependency()?
+    if @expr? and @expr.resolvable()
       @immediate = @expr.evaluate() & 0xffff
       delete @expr
 
@@ -21,8 +21,8 @@ class Operand
     else
       "<#{@code}>"
 
-  dependency: (symtab={}) ->
-    @expr?.dependency(symtab)
+  resolvable: (symtab={}) ->
+    if @expr? then @expr.resolvable(symtab) else true
 
   # returns true if the operand is newly compactible.
   # the compactible-ness is memoized, but resolved expressions are not.
@@ -60,7 +60,7 @@ class Operand
   # there is no immediate, or it can't be resolved yet.
   immediateValue: (symtab) ->
     if @immediate? then return @immediate
-    if @expr? and not @expr.dependency(symtab)?
+    if @expr? and @expr.resolvable(symtab)
       @expr.evaluate(symtab)
     else
       null

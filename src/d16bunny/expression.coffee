@@ -10,7 +10,7 @@ class Expression
     e.evaluate = (symtab) ->
       throw new AssemblerError(@text, @pos, "Constant expressions may not contain register references")
     e.toString = -> @register.toUpperCase()
-    e.dependency = (symtab) -> null
+    e.resolvable = (symtab={}) -> true
     e
 
   Literal: (text, pos, n) ->
@@ -20,7 +20,7 @@ class Expression
     e.literal = n
     e.evaluate = (symtab) -> @literal
     e.toString = -> @literal.toString()
-    e.dependency = (symtab) -> null
+    e.resolvable = (symtab={}) -> true
     e
 
   Label: (text, pos, x) ->
@@ -31,7 +31,7 @@ class Expression
         throw new AssemblerError(@text, @pos, "Can't resolve reference to " + @label)
       symtab[@label]
     e.toString = -> @label
-    e.dependency = (symtab) -> if symtab?[@label]? then null else @label
+    e.resolvable = (symtab={}) -> symtab[@label]?
     e
 
   Unary: (text, pos, op, r) ->
@@ -44,7 +44,7 @@ class Expression
         when '-' then -r
         else r
     e.toString = -> "(" + @unary + @right.toString() + ")"
-    e.dependency = (symtab) -> @right.dependency(symtab)
+    e.resolvable = (symtab={}) -> @right.resolvable(symtab)
     e
 
   Binary: (text, pos, op, l, r) ->
@@ -74,10 +74,7 @@ class Expression
         when '!=' then (if l != r then 1 else 0)
         else throw new AssemblerError(@text, @pos, "Internal error (undefined binary operator)")
     e.toString = -> "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")"
-    e.dependency = (symtab) ->
-      missing = @left.dependency(symtab)
-      if not missing? then missing = @right.dependency(symtab)
-      missing
+    e.resolvable = (symtab={}) -> @left.resolvable(symtab) and @right.resolvable(symtab)
     e
 
   constructor: (@text, @pos) ->
@@ -85,14 +82,13 @@ class Expression
   # for debugging.
   toString: -> throw "must be implemented in objects"
 
-  # return the name of the first symbol that's required by this expression,
-  # but missing from the symtab. return null if everything is okay.
-  # (if 'dependency' returns null, then 'evaluate' must succeed.)
-  dependency: (symtab) -> throw "must be implemented in objects"
+  # return true if this expression can be resolved into a final value, given
+  # this symtab.
+  resolvable: (symtab={}) -> throw "must be implemented in objects"
 
   # Given a symbol table of names and values, resolve this expression tree
   # into a single number. Any register reference, or reference to a symbol
   # that isn't defined in 'symtab' will be an error.
-  evaluate: (symtab) -> throw "must be implemented in objects"
+  evaluate: (symtab={}) -> throw "must be implemented in objects"
 
 exports.Expression = Expression

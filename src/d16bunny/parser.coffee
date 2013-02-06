@@ -478,9 +478,9 @@ class Parser
     m = line.mark()
     expr = @parseExpression(line)
     if not line.finished() then line.fail "Unexpected content after IF"
-    if expr.dependency(@constants)?
+    if not expr.resolvable(@constants)
       line.rewind(m)
-      line.fail "IF expression must use only constants (undefined: #{expr.dependency(@constants)}"
+      line.fail "IF expression must use only constants"
     expr = expr.evaluate(@constants)
     @ignoring = (expr == 0)
     @ifStack.push(@ignoring)
