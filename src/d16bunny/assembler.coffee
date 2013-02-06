@@ -8,6 +8,9 @@ AssemblerError = require('./errors').AssemblerError
 AssemblerOutput = require('./output').AssemblerOutput
 prettyPrinter = require('./prettyprint').prettyPrinter
 
+BuiltinMacros = require("./builtins").BuiltinMacros
+
+
 padding = "0000"
 hex = (n) ->
   rv = n.toString(16)
