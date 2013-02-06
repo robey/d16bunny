@@ -1,7 +1,7 @@
-should = require 'should'
-d16bunny = require '../src/d16bunny'
+should = require "should"
+d16bunny = require "../src/d16bunny"
 
-pp = require('../src/d16bunny/prettyprint').prettyPrinter
+pp = d16bunny.pp
 
 trimHtml = (html) ->
   # try to reign in the html for testing
@@ -256,83 +256,6 @@ describe "Parser", ->
       pline.toString().should.eql(".org")
       pline.data.should.eql([ 3 ])
       html.should.eql("  {directive:org} {number:3}")
-
-  describe "parseLine macros", ->
-    it "parses a macro definition", ->
-      parser = new d16bunny.Parser()
-      pline = parser.parseLine("#macro swap(left, right) {")
-      pline.toString().should.eql(".macro swap")
-      html = trimHtml(pline.toHtml())
-      html.should.eql("{directive:#macro} {identifier:swap}{directive:(}{identifier:left}{directive:,} " +
-        "{identifier:right}{directive:)} {directive:{}")
-      # check that it's there
-      parser.macros["swap(2)"].name.should.eql("swap(2)")
-      parser.macros["swap(2)"].parameters.should.eql([ "left", "right" ])
-      # add lines
-      line1 = parser.parseLine("  set push, left")
-      line1.toString().should.eql("")
-      line2 = parser.parseLine("  set left, right")
-      line2.toString().should.eql("")
-      line3 = parser.parseLine("  set right, pop")
-      line3.toString().should.eql("")
-      line4 = parser.parseLine("}")
-      line4.toString().should.eql("")
-      parser.macros["swap(2)"].textLines.should.eql([
-        "  set push, left",
-        "  set left, right",
-        "  set right, pop"
-      ])
-
-    it "parses a macro call", ->
-      parser = new d16bunny.Parser()
-      for x in [
-        "#macro swap(left, right) {"
-        "  set push, left"
-        "  set left, right"
-        "  set right, pop"
-        "}"
-      ] then parser.parseLine(x)
-      line = parser.parseLine("  swap(x, y)")
-      line.toString().should.eql("{ SET <24>, <3>; SET <3>, <4>; SET <4>, <24> }")
-      html = trimHtml(line.toHtml())
-      html.should.eql("  {identifier:swap}{operator:(}{string:x}{operator:,} {string:y}{operator:)}")
-
-    it "parses a nested macro call", ->
-      parser = new d16bunny.Parser()
-      for x in [
-        "#macro save(r) {"
-        "  set push, r"
-        "}"
-      ] then parser.parseLine(x)
-      for x in [
-        "#macro restore(r) {"
-        "  set r, pop"
-        "}"
-      ] then parser.parseLine(x)
-      for x in [
-        "#macro swap(left, right) {"
-        "  save(left)"
-        "  set left, right"
-        "  restore(right)"
-        "}"
-      ] then parser.parseLine(x)
-      line = parser.parseLine("  swap(x, y)")
-      line.toString().should.eql("{ SET <24>, <3>; SET <3>, <4>; SET <4>, <24> }")
-      html = trimHtml(line.toHtml())
-      html.should.eql("  {identifier:swap}{operator:(}{string:x}{operator:,} {string:y}{operator:)}")
-
-    it "parses a macro form of BRA", ->
-      parser = new d16bunny.Parser()
-      for x in [
-        "#macro bra(addr) {"
-        "  add pc, addr - .next"
-        ":.next"
-        "}"
-      ] then parser.parseLine(x)
-      line = parser.parseLine("  bra 0x1000")
-      label = line.expanded[1].label
-      (label.match(/bra\.(.*?)\.next/)?).should.equal(true)
-      line.toString().should.eql("{ ADD <28>, <31, (4096 - #{label})>; :#{label}  }")
 
   describe "parseLine if", ->
     it "parses a simple if block", ->

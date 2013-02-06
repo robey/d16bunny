@@ -2,9 +2,10 @@
 Dcpu = require("./dcpu").Dcpu
 Span = require("./line").Span
 Line = require("./line").Line
+Operand = require("./operand").Operand
 Expression = require('./expression').Expression
 AssemblerError = require('./errors').AssemblerError
-prettyPrinter = require('./prettyprint').prettyPrinter
+pp = require('./prettyprint').pp
 
 
 # things parsed out of a Line
@@ -31,89 +32,53 @@ class ParsedLine
 
   toHtml: -> @line.toHtml()
 
+  toDebug: -> @line.toDebug()
+
   fail: (message) ->
     throw new AssemblerError(@line.text, @opPos.pos, message)
 
 
-class Operand
-  # pos: where it is in the string
-  # code: 5-bit value for the operand in an opcode
-  # expr: (optional) an expression to be evaluated for the immediate
-  # immediate: (optional) a resolved 16-bit immediate
-  #   (only one of 'expr' or 'immediate' will ever be set)
-  # compactable: true if the im
-  constructor: (@pos, @code, @expr) ->
-    @immediate = null
-    @compacting = false
-    if @expr? and not @expr.dependency()?
-      @immediate = @expr.evaluate() & 0xffff
-      delete @expr
-
-  toString: ->
-    if @immediate?
-      "<#{@code}, #{@immediate}>"
-    else if @expr?
-      "<#{@code}, #{@expr.toString()}>"
-    else
-      "<#{@code}>"
-
-  dependency: (symtab={}) ->
-    @expr?.dependency(symtab)
-
-  # returns true if the operand is newly compactible.
-  # the compactible-ness is memoized, but resolved expressions are not.
-  # this method is meant to be used as an edge-trigger that the size of the
-  # instruction has shrunk, so after a true result, future calls will return
-  # false. it also returns false if there's an expression that can't be 
-  # resolved yet (so we don't know if it can be compacted).
-  checkCompact: (symtab) ->
-    if @compacting or @code != Operand.Immediate then return false
-    value = @immediateValue()
-    if not value? then return false
-    if value == 0xffff or value < 31
-      @compacting = true
-      true
-    else
-      false
-
-  # return the 5-bit code for this operand, and any immediate value (or null).
-  # if there's an expression that can't be resolved yet, it will be returned
-  # instead of the immediate.
-  pack: (symtab, canCompact=false) ->
-    value = @immediateValue(symtab)
-    if @compacting and canCompact and value?
-      inline = if value == 0xffff then 0x00 else (0x01 + value)
-      [ Operand.ImmediateInline + inline, null ]
-    else if @expr? and not value?
-      [ @code, @expr ]
-    else if value?
-      [ @code, value ]
-    else
-      [ @code, null ]
-
-  # return the value of the immediate, if it is already known or can be
-  # resolved with the current symtab. nothing is memoized. returns null if
-  # there is no immediate, or it can't be resolved yet.
-  immediateValue: (symtab) ->
-    if @immediate? then return @immediate
-    if @expr? and not @expr.dependency(symtab)?
-      @expr.evaluate(symtab)
-    else
-      null
-
-Operand.Register = 0x00
-Operand.RegisterDereference = 0x08
-Operand.RegisterIndex = 0x10
-Operand.ImmediateDereference = 0x1e
-Operand.Immediate = 0x1f
-Operand.ImmediateInline = 0x20
-
-
 class Macro
-  constructor: (@name, @parameters) ->
+  constructor: (@name, @fullname, @parameters) ->
     @textLines = []
     @error = null
     @parameterMatchers = @parameters.map (p) -> new RegExp("\\b#{p}\\b", "g")
+
+  invoke: (parser, args) ->
+    parser.debug "  macro expansion of ", @fullname, ":"
+    newTextLines = for text in @textLines
+      # textual substitution, no fancy stuff.
+      for i in [0 ... args.length]
+        text = text.replace(@parameterMatchers[i], args[i])
+      parser.debug "  -- ", text
+      text
+    parser.debug "  --."
+
+    # prefix relative labels with a unique tag
+    parser.setLabelPrefix(@name + "." + Date.now() + "." + Math.floor(Math.random() * 1000000.0))
+
+    plines = []
+    try
+      for text in newTextLines
+        try
+          pline = parser.parseLine(text)
+        catch e
+          if e.type == "AssemblerError" and @error? then e.setReason(@error)
+          throw e
+        if pline.directive? then pline.line.fail "Macros can't have directives in them"
+        if pline.expanded?
+          # nested macros are okay, but unpack them.
+          expanded = pline.expanded
+          delete pline.expanded
+          # if a macro was expanded on a line with a label, push the label by itself, so we remember it.
+          if pline.label? then plines.push(pline)
+          for x in expanded then plines.push(x)
+        else
+          plines.push(pline)
+    finally
+      parser.clearLabelPrefix()
+    parser.debug "  macro expansion of ", @fullname, " complete: ", plines.length, " lines"
+    plines
 
 
 # parse lines of DCPU assembly into structured data.
@@ -125,7 +90,6 @@ class Parser
   HexRegex: /^0x[0-9a-fA-F]+/
   BinaryRegex: /^0b[01]+/
   LabelRegex: /^([a-zA-Z_.][a-zA-Z_.0-9]*|\$)/
-  SymbolRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*/
   OperatorRegex: /^(\*|\/|%|\+|\-|<<|>>|\&|\^|\||<\=|>\=|<|>|==|!=)/
 
   # precedence of supported binary operators in expressions
@@ -152,30 +116,39 @@ class Parser
 
   reset: ->
     @macros = {}
-    @inMacro = null    # if waiting for an "}"
-    @ifStack = []      # for nested .if
-    @ignoring = false  # for skipping sections inside in .if
+    @inMacro = null            # if waiting for an "}"
+    @ifStack = []              # for nested .if
+    @ignoring = false          # for skipping sections inside in .if
     @constants = {}            # definitions found by .define
     @lastLabel = null          # for resolving relative labels
-    @expandingMacro = null     # label prefix for a currently-expanding macro
+    @labelPrefix = null        # label prefix for a currently-expanding macro
+    @labelStack = []           # for saving the label prefix when entering a macro expansion
 
   debug: (list...) ->
     unless @debugger? then return
     slist = for item in list
       switch typeof item
         when 'string' then item.toString()
-        else prettyPrinter.dump(item)
+        else pp(item)
     @debugger(slist.join(""))
 
   fixLabel: (label, save=false) ->
     if label[0] == "."
-      if @expandingMacro?
-        label = @expandingMacro + label
+      if @labelPrefix?
+        label = @labelPrefix + label
       else if @lastLabel?
         label = @lastLabel + label
     else
       if save then @lastLabel = label
     label
+
+  setLabelPrefix: (prefix) ->
+    @labelStack.push([ @lastLabel, @labelPrefix ])
+    @lastLabel = null
+    @labelPrefix = prefix
+
+  clearLabelPrefix: ->
+    [ @lastLabel, @labelPrefix ] = @labelStack.pop()
 
   # returns a Line object, with syntax parsed out
   parseLine: (text, lineNumber = 0) ->
@@ -193,7 +166,10 @@ class Parser
 
     if @inMacro
       if line.scan("}", Span.Directive)
+        @debug "  finished defining macro", @inMacro
         @inMacro = false
+        line.skipWhitespace()
+        if not line.finished() then line.fail "Unexpected content after end of macro"
       else
         @macros[@inMacro].textLines.push(text)
       return pline
@@ -457,10 +433,11 @@ class Parser
     if @macros[fullname]?
       line.rewind(m)
       line.fail "Duplicate definition of #{fullname}"
-    @macros[fullname] = new Macro(fullname, parameters)
-    if not @macros[line.name]? then @macros[pline.name] = []
+    @macros[fullname] = new Macro(pline.name, fullname, parameters)
+    if not @macros[pline.name]? then @macros[pline.name] = []
     @macros[pline.name].push(parameters.length)
     @inMacro = fullname
+    @debug "  defining macro ", fullname
 
   parseMacroParameters: (line) ->
     args = []
@@ -483,43 +460,7 @@ class Parser
     if @macros[name].indexOf(args.length) < 0
       line.rewind(m)
       line.fail "Macro '#{name}' requires #{@macros[name].join(' or ')} arguments"
-    macro = @macros["#{name}(#{args.length})"]
-
-    @debug "  macro expansion of ", name, "(", args.length, "):"
-    newTextLines = for text in macro.textLines
-      # textual substitution, no fancy stuff.
-      for i in [0 ... args.length]
-        text = text.replace(macro.parameterMatchers[i], args[i])
-      @debug "  -- ", text
-      text
-    @debug "  --."
-
-    pline.expanded = []
-    saved1 = @expandingMacro
-    @expandingMacro = name + "." + Date.now() + "." + Math.floor(Math.random() * 1000000.0)
-    saved2 = @lastLabel
-    @lastLabel = null
-    for text in newTextLines
-      try
-        xline = @parseLine(text)
-      catch e
-        if e.type == "AssemblerError" and macro.error? then e.setReason(macro.error)
-        throw e
-      if xline.directive?
-        line.rewind(m)
-        line.fail "Macros can't have directives in them"
-      if xline.expanded?
-        # nested macros are okay, but unpack them.
-        expanded = xline.expanded
-        delete xline.expanded
-        # if a macro was expanded on a line with a label, push the label by itself, so we remember it.
-        if xline.label? then pline.expanded.push(xline)
-        for x in expanded then pline.expanded.push(x)
-      else
-        pline.expanded.push(xline)
-    @debug "  macro expansion of ", name, "(", args.length, ") complete: ", pline.expanded.length, " lines"
-    @expandingMacro = saved1
-    @lastLabel = saved2
+    pline.expanded = @macros["#{name}(#{args.length})"].invoke(@, args)
     pline
 
   # don't overthink this. we want literal text substitution.
@@ -567,6 +508,5 @@ class Parser
 
 
 exports.Line = Line
-exports.Operand = Operand
 exports.Macro = Macro
 exports.Parser = Parser

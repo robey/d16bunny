@@ -58,6 +58,16 @@ class Line
     if x < @text.length then rv += @htmlEscape(@text[x ...])
     rv
 
+  toDebug: ->
+    x = 0
+    rv = ""
+    for span in @spans
+      if x < span.start then rv += @text[x ... span.start]
+      rv += "{#{span.type}:#{@text[span.start ... span.end]}}"
+      x = span.end
+    if x < @text.length then rv += @text[x ...]
+    rv
+
   fail: (message) ->
     throw new AssemblerError(@text, @pos, message)
 

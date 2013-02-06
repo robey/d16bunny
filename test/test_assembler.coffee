@@ -77,7 +77,7 @@ describe "Assembler.compileLine", ->
     a = new d16bunny.Assembler(logger)
     parser = new d16bunny.Parser()
     parser.macros["swap"] = [ 2 ]
-    m = new d16bunny.Macro("swap(2)", [ "r1", "r2" ])
+    m = new d16bunny.Macro("swap", "swap(2)", [ "r1", "r2" ])
     parser.macros["swap(2)"] = m
     for x in [
       "set push, r1"
