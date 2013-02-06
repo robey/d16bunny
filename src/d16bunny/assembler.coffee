@@ -25,39 +25,6 @@ class DataLine
   constructor: (@pline, @address = 0, @data = []) ->
     @expanded = null
 
-  fail: (message) ->
-    throw new AssemblerError(@pline.line.text, 0, message)
-
-  flatten: ->
-    if not @expanded? then return
-    address = @address
-    if @data.length > 0 then @fail "Internal error: Expanded macro has data"
-    for xline in @expanded
-      if xline.address != address then @fail "Internal error: Disjunct expanded macro"
-      for x in xline.data then if typeof x != 'number' then @fail "Internal error: unresolved expression"
-      @data = @data.concat xline.data
-      address += xline.data.length
-    delete @expanded
-
-  resolve: (symtab) ->
-    changed = false
-    @resolved = true
-    @data = @data.map (item) =>
-      if item instanceof Expression
-        if item.resolvable(symtab)
-          changed = true
-          item.evaluate(symtab)
-        else
-          @resolved = false
-          item
-      else
-        item
-    if @expanded?
-      for xline in @expanded
-        if xline.resolve(symtab) then changed = true
-        if not xline.resolved then @resolved = false
-    changed
-
   toString: ->
     extra = if @expanded?
       "{ " + @expanded.map((x) -> x.toString()).join(" / ") + " }"
@@ -70,6 +37,33 @@ class DataLine
         hex(item)
     "#{hex(@address)}: " + data.join(", ") + extra
 
+  fail: (message) ->
+    throw new AssemblerError(@pline.line.text, 0, message)
+
+  flatten: ->
+    if not @expanded? then return
+    address = @address
+    if @data.length > 0 then @fail "Internal error: Expanded macro has data"
+    for dline in @expanded
+      if dline.address != address then @fail "Internal error: Disjunct expanded macro"
+      for x in dline.data then if typeof x != 'number' then @fail "Internal error: unresolved expression"
+      @data = @data.concat dline.data
+      address += dline.data.length
+    delete @expanded
+
+  resolve: (symtab) ->
+    for i in [0 ... @data.length]
+      if @data[i] instanceof Expression then @data[i] = @data[i].evaluate(symtab)
+    if @expanded?
+      for dline in @expanded then dline.resolve(symtab)
+
+  nextAddress: ->
+    address = @address
+    if @expanded?
+      for dline in @expanded
+        address += dline.data.length
+    address += @data.length
+    address
 
 # compile lines of DCPU assembly.
 class Assembler
@@ -126,7 +120,7 @@ class Assembler
       dline = @process pline.lineNumber, => @compileLine(pline, address)
       @debug "  data: ", dline
       if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
-      if dline? then address = dline.address + dline.data.length
+      if dline? then address = dline.nextAddress()
       dline
     # force all unresolved expressions, because the symtab is now complete.
     for dline in dlines
@@ -208,12 +202,12 @@ class Assembler
         if (expr instanceof Expression) and expr.resolvable(@symtab) then expr.evaluate(@symtab) else expr
       return new DataLine(pline, address, data)
     if pline.expanded?
-      rv = new DataLine(pline, address, [])
-      rv.expanded = pline.expanded.map (x) =>
+      dline = new DataLine(pline, address, [])
+      dline.expanded = pline.expanded.map (x) =>
         dataLine = @compileLine(x, address)
         address = dataLine.address + dataLine.data.length
         dataLine
-      return rv
+      return dline
     if not pline.op? then return new DataLine(pline, address, [])
 
     # optimizations are allowed to cook up a new ParsedLine just for this round.
@@ -243,8 +237,8 @@ class Assembler
     @debug "  resolve: ", dline
     @symtab["."] = dline.address
     @symtab["."] = dline.address
-    for i in [0 ... dline.data.length]
-      if dline.data[i] instanceof Expression then dline.data[i] = dline.data[i].evaluate(@symtab)
+    dline.resolve(@symtab)
+    dline.flatten()
 
   # ----- optimizations
 

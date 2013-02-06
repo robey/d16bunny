@@ -4,14 +4,16 @@ d16bunny = require '../src/d16bunny'
 logger = (lineno, pos, message) ->
 
 describe "Assembler.compile", ->
-  build = (code, debugging) ->
+  build = (code, options={}) ->
     a = new d16bunny.Assembler(logger)
-    if debugging?
+    if options.debugging?
       a.debugger = console.log
       console.log "----------"
-    rv = a.compile(code)
-    rv.errorCount.should.equal(0)
-    rv.pack()
+    out = a.compile(code)
+    out.errors.length.should.equal(0)
+    out
+
+  dump = (out) -> out.lines.map (dline) -> dline.toString()
 
   it "compiles a small program", ->
     code = [
@@ -20,27 +22,28 @@ describe "Assembler.compile", ->
       "  set [text], 0xf052"
       "  bor x, y"
     ]
-    a = new d16bunny.Assembler(logger)
-    rv = a.compile(code)
-    rv.errors.length.should.equal(0)
-    lines = rv.lines
-    a.symtab.text.should.equal(0x8000)
-    lines.length.should.equal(4)
-    lines[0].toString().should.eql("0x0000: ")
-    lines[1].toString().should.eql("0x0000: ")
-    lines[2].toString().should.eql("0x0000: 0x7fc1, 0xf052, 0x8000")
-    lines[3].toString().should.eql("0x0003: 0x106b")
+    out = build(code)
+    lines = out.lines
+    out.symtab.text.should.equal(0x8000)
+    dump(out).should.eql([
+      "0x0000: "
+      "0x0000: "
+      "0x0000: 0x7fc1, 0xf052, 0x8000"
+      "0x0003: 0x106b"
+    ])
 
-#   it "compiles a forward reference", ->
-#     code = [ "org 0x1000", "jmp hello", ":hello bor x, y" ];
-#     a = new d16bunny.Assembler(logger)
-#     rv = a.compile(code)
-#     rv.errorCount.should.equal(0)
-#     lines = rv.lines
-#     lines.length.should.equal(3)
-#     lines[0].should.eql(org: 0x1000, data: [])
-#     lines[1].should.eql(org: 0x1000, data: [ 0x7f81, 0x1002 ])
-#     lines[2].should.eql(org: 0x1002, data: [ 0x106b ])
+  it "compiles a forward reference", ->
+    code = [
+      "org 0x1000"
+      "jmp hello"
+      ":hello bor x, y"
+    ]
+    out = build(code)
+    dump(out).should.eql([
+      "0x1000: "
+      "0x1000: 0x7f81, 0x1002"
+      "0x1002: 0x106b"
+    ])
 
 #   it "packs into blocks", ->
 #     code = [
