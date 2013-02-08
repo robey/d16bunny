@@ -19,7 +19,6 @@ Span.Label = "label"
 
 # for parsing a line of text, and syntax highlighting
 class Line
-  SymbolRegex: /^[a-zA-Z_.][a-zA-Z_.0-9]*/
 
   constructor: (@text) ->
     @pos = 0            # current index within text
@@ -145,7 +144,7 @@ class Line
     rv
 
   parseWord: (name, type = Span.Identifier) ->
-    word = @match(Line::SymbolRegex, type)
+    word = @match(Line.SymbolRegex, type)
     if not word? then @fail "#{name} must contain only letters, digits, _ or ."
     word = word.toLowerCase()
     if Dcpu.Reserved[word] or Dcpu.ReservedOp[word] then @fail "Reserved keyword: #{word}"
@@ -175,6 +174,8 @@ class Line
     if inString then @fail "Expected closing \""
     if inChar then @fail "Expected closing \'"
     rv
+
+Line.SymbolRegex = /^[a-zA-Z_.][a-zA-Z_.0-9]*/
 
 
 exports.Span = Span
