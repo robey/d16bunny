@@ -51,15 +51,11 @@ describe "Assembler.compileLine", ->
       dline.flatten()
       dline.toString().should.eql("0x0200: 0x6381")
 
-    it "compiles bra", ->
+    it "compiles bra forward", ->
       [ dline, symtab ] = compileLine("bra exit", 0x200, exit: 0x204)
       dline.resolve(symtab)
       dline.flatten()
       dline.toString().should.eql("0x0200: 0x7f82, 0x0002")
-
-  it "optimizes sub x, 65530 to add x, 6", ->
-    [ dline, symtab ] = compileLine("sub x, 65530", 0x200)
-    dline.toString().should.eql("0x0200: 0x7c62, 0x0006")
 
   it "refuses a non-immediate branch", ->
     (-> compileLine("bra [cout]", 0x200)).should.throw(/BRA/)
@@ -105,54 +101,3 @@ describe "Assembler.compileLine", ->
     [ dline, symtab ] = compileLine("set 1, a", 0)
     dline.toString().should.eql("0x0000: 0x03e1, 0x0001")
 
-describe "Assembler.resolveLine", ->
-  compileLine = (text, address, symbols={}) ->
-    a = new d16bunny.Assembler(logger)
-    a.symtab = symbols
-    parser = new d16bunny.Parser()
-    a.addBuiltinMacros(parser)
-    if symbols.debugging
-      a.debugger = console.log
-      parser.debugger = console.log
-      console.log "-----"
-    pline = parser.parseLine(text)
-    dline = a.compileLine(pline, address)
-    a.resolveLine(dline)
-    if a.shrunk
-      dline = a.compileLine(pline, address)
-      a.resolveLine(dline)
-    [ dline, a.symtab ]
-
-  it "shrinks a simple set", ->
-    [ dline, symtab ] = compileLine("set a, 0", 0x200)    
-    dline.toString().should.eql("0x0200: 0x8401")
-
-  it "shrinks a one-operand", ->
-    [ dline, symtab ] = compileLine("hwi 3", 0x200)
-    dline.toString().should.eql("0x0200: 0x9240")
-
-  it "shrinks the hlt macro", ->
-    [ dline, symtab ] = compileLine("hlt", 0x200)
-    dline.flatten()
-    dline.toString().should.eql("0x0200: 0x8b83")
-
-  it "doesn't shrink the first operand", ->
-    [ dline, symtab ] = compileLine("set 3, 4", 0x200)
-    dline.toString().should.eql("0x0200: 0x97e1, 0x0003")
-
-  it "optimizes sub x, 65530 to add x, 6", ->
-    [ dline, symtab ] = compileLine("sub x, 65530", 0x200)
-    dline.toString().should.eql("0x0200: 0x9c62")
-
-  it "optimizes sub x, 65530 in an expression to add x, 6", ->
-    [ dline, symtab ] = compileLine("sub x, home + 30", 0x200, home: 65500)
-    dline.toString().should.eql("0x0200: 0x9c62")
-
-# describe "Assembler.resolveLine", ->
-#   it "resolves a short relative branch", ->
-#     a = new d16bunny.Assembler(logger)
-#     dline = a.compileLine("bra next", 0x200)
-#     dline.branchFrom?.should.equal(0x201)
-#     a.symtab.next = 0x208
-#     a.resolveLine(dline)
-#     dline.data.should.eql([ 0xa382 ])

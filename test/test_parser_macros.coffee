@@ -54,10 +54,10 @@ describe "Parser macros", ->
       "}"
     ] then parser.parseLine(text)
     pline = parser.parseLine("inject 99")
-    pline.toString().should.eql("{ DAT }")
+    pline.toString().should.eql("{  }")
     pline.expanded[0].data.map((x) -> x.evaluate()).should.eql([ 1, 99, 0 ])
     pline = parser.parseLine("inject 10, 11")
-    pline.toString().should.eql("{ DAT }")
+    pline.toString().should.eql("{  }")
     pline.expanded[0].data.map((x) -> x.evaluate()).should.eql([ 2, 10, 11, 0 ])
 
   it "parses a nested macro call", ->

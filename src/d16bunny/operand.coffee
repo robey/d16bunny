@@ -58,9 +58,13 @@ class Operand
   # instead of the immediate.
   pack: (symtab) ->
     value = @immediateValue(symtab)
-    if @compacting and value?
-      inline = if value == 0xffff then 0x00 else (0x01 + value)
-      [ Operand.ImmediateInline + inline, null ]
+    if @compacting
+      if value?
+        inline = if value == 0xffff then 0x00 else (0x01 + value)
+        [ Operand.ImmediateInline + inline, null ]
+      else
+        # code to be resolved later...
+        [ 0, null ]
     else if @expr? and not value?
       [ @code, @expr ]
     else if value?

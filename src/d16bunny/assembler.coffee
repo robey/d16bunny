@@ -6,7 +6,7 @@ Operand = require('./parser').Operand
 Macro = require('./parser').Macro
 AssemblerError = require('./errors').AssemblerError
 AssemblerOutput = require('./output').AssemblerOutput
-prettyPrinter = require('./prettyprint').prettyPrinter
+pp = require('./prettyprint').pp
 
 BuiltinMacros = require("./builtins").BuiltinMacros
 
@@ -103,14 +103,14 @@ class Assembler
     # constants (copied into symtab) which don't change when code size changes
     @constants = {}
     @errors = []
-    @shrunk = false
+    @recompile = false
 
   debug: (list...) ->
     unless @debugger? then return
     slist = for item in list
       switch typeof item
         when 'string' then item.toString()
-        else prettyPrinter.dump(item)
+        else pp(item)
     @debugger(slist.join(""))
 
   fail: (x, message) ->
@@ -142,11 +142,12 @@ class Assembler
     plines = @parse(textLines)
     if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
 
-    # repeat the compile/resolve cycle until we stop shrinking the code size.
-    @shrunk = true
+    # repeat the compile/resolve cycle until we stop modifying the parsed
+    # lines, either by optimizing, or compacting inline constants.
+    @recompile = true
     originalAddress = address
-    while @shrunk
-      @shrunk = false
+    while @recompile
+      @recompile = false
       address = originalAddress
       @symtab = {}
       for k, v of @constants then @symtab[k] = v
@@ -204,7 +205,7 @@ class Assembler
 
   # attempt to turn a ParsedLine into a DataLine.
   # the ParsedLine is left untouched unless an immediate value is newly
-  # compactible, in which case @shrunk is set, and the ParsedLine is
+  # compactible, in which case @recompile is set, and the ParsedLine is
   # memoized with the compaction.
   compileLine: (pline, address) ->
     @debug "+ compiling @ ", address, ": ", pline
@@ -215,9 +216,9 @@ class Assembler
 
     if pline.directive?
       switch pline.directive
-        when "org" then address = pline.data.pop()
+        when "org" then address = pline.data[0]
     if pline.label? then @symtab[pline.label] = address
-    if pline.data.length > 0
+    if pline.data.length > 0 and not pline.directive?
       data = pline.data.map (expr) =>
         if (expr instanceof Expression) and expr.resolvable(@symtab)
           expr.evaluate(@symtab) & 0xffff
@@ -233,36 +234,46 @@ class Assembler
       return dline
     if not pline.op? then return new DataLine(pline, address, [])
 
-    @optimize(pline)
-
-    data = [ 0 ]
-    operandCodes = []
-    if pline.operands.length > 0
-      for i in [pline.operands.length - 1 .. 0]
-        [ code, immediate ] = pline.operands[i].pack(@symtab)
-        operandCodes.push(code)
-        if immediate? then data.push(immediate)
-    if Dcpu.BinaryOp[pline.op]?
-      data[0] = (operandCodes[0] << 10) | (operandCodes[1] << 5) | Dcpu.BinaryOp[pline.op]
-    else if Dcpu.SpecialOp[pline.op]?
-      data[0] = (operandCodes[0] << 10) | (Dcpu.SpecialOp[pline.op] << 5)
-
-    new DataLine(pline, address, data)
+    dline = new DataLine(pline, address)
+    @fillInstruction(dline)
+    dline
 
   resolveLine: (dline) ->
-    @debug "  resolve: ", dline
+    @debug "+ resolving @ ", dline.address, ": ", dline
     @symtab["."] = dline.address
     @symtab["$"] = dline.address
+    #@debug "  symtab for resolve: ", @symtab
     dline.resolve(@symtab)
-    # now that the expressions are all resolved, could this line have been compacted?
+    # fill in any missing bits we didn't know before symbols were resolved
+    @fillInstruction(dline)
+    # now that the expressions are all resolved, could this line have been
+    # optimized, or compacted?
+    @optimize(dline.pline)
     operands = dline.pline.operands
     if operands.length > 0
       operand = operands[operands.length - 1]
       if operand.checkCompact(@symtab)
         @debug "  compacted ", operand
         # signal that we have to re-run compilation
-        @shrunk = true
+        @recompile = true
+
     if dline.expanded? then for dl in dline.expanded then @resolveLine(dl)
+
+  fillInstruction: (dline) ->
+    pline = dline.pline
+    if not pline.op? then return
+    dline.data = [ 0 ]
+    operandCodes = []
+    if pline.operands.length > 0
+      for i in [pline.operands.length - 1 .. 0]
+        [ code, immediate ] = pline.operands[i].pack(@symtab)
+        operandCodes.push(code)
+        if immediate? then dline.data.push(immediate)
+    if Dcpu.BinaryOp[pline.op]?
+      dline.data[0] = (operandCodes[0] << 10) | (operandCodes[1] << 5) | Dcpu.BinaryOp[pline.op]
+    else if Dcpu.SpecialOp[pline.op]?
+      dline.data[0] = (operandCodes[0] << 10) | (Dcpu.SpecialOp[pline.op] << 5)
+
 
   # ----- optimizations
 
@@ -280,6 +291,7 @@ class Assembler
       pline.operands[1].immediate = null
     else
       pline.operands[1].immediate = 0x10000 - value
+    @recompile = true
     @debug "  optimize/add: ", pline
 
 
@@ -299,51 +311,7 @@ class Assembler
   #
   # the compiler will try to continue if there are errors, to greedily find
   # as many of the errors as it can. after 'maxErrors', it will stop.
-  xxxcompile: (lines, org = 0, maxErrors = 10) ->
-    @infos = []
-    @continueCompile(lines, org, maxErrors)
 
-  # compile new lines without clearing out old compiled blocks.
-  # may be used to compile several files as if they were one unit.
-  # this function does not know/care if a previous run had errors, so you
-  # should check the errorCount after each run.
-  continueCompile: (lines, org = null, maxErrors = 10) ->
-    if not org? then org = @lastOrg
-    errorCount = 0
-    giveUp = false
-    defaultValue = { org: org, data: [] }
-    process = (lineno, f) =>
-      if giveUp then return defaultValue
-      try
-        f()
-      catch e
-        if e.type != "AssemblerError" then throw e
-        pos = if e.pos? then e.pos else 0
-        reason = if e.reason? then e.reason else e.toString()
-        @debug "  error on line ", lineno, " at ", pos, ": ", reason
-        @logger(lineno, pos, reason)
-        errorCount++
-        if errorCount >= maxErrors
-          @debug "  too many errors"
-          @logger(lineno, 0, "Too many errors; giving up.")
-          giveUp = true
-        defaultValue
-    # pass 1:
-    for i in [0 ... lines.length]
-      line = lines[i]
-      info = process i, => @compileLine(line, org)
-      @infos.push(info)
-      org = info.org + info.data.length
-    # pass 2:
-    for i in [0 ... lines.length]
-      info = @infos[i]
-      process i, => @resolveLine(info)
-      # if anything failed, fill it in with zeros.
-      for j in [0 ... info.data.length]
-        if typeof info.data[j] == 'object'
-          info.data[j] = 0
-    @lastOrg = org
-    new AssemblerOutput(errorCount, @infos, @symtab)
 
 
 exports.DataLine = DataLine

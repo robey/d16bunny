@@ -236,14 +236,14 @@ describe "Parser", ->
 
     it "parses data", ->
       [ pline, html ] = parseLine("dat 3, 9, '@', \"cat\", p\"cat\"")
-      pline.toString().should.eql("DAT")
+      pline.toString().should.eql("")
       pline.data.map((x) => x.evaluate()).should.eql([ 3, 9, 0x40, 0x63, 0x61, 0x74, 0x6361, 0x7400 ])
       html.should.eql("{instruction:dat} {number:3}{operator:,} {number:9}{operator:,} " +
         "{string:&#39;@&#39;}{operator:,} {string:&quot;cat&quot;}{operator:,} {string:p&quot;cat&quot;}")
 
     it "parses rom strings", ->
       [ pline, html ] = parseLine("dat r\"cat\"")
-      pline.toString().should.eql("DAT")
+      pline.toString().should.eql("")
       pline.data.map((x) => x.evaluate()).should.eql([ 0x6361, 0xf400 ])
       html.should.eql("{instruction:dat} {string:r&quot;cat&quot;}")
 
