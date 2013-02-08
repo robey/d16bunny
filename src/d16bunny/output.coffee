@@ -9,6 +9,7 @@ class AssemblerOutput
     @lineMap = []
     for i in [0 ... @lines.length]
       line = @lines[i]
+      delete line.pline
       size = line.data.length
       continue if size == 0
       @lineMap.push(address: line.address, end: line.address + size, lineno: i)
