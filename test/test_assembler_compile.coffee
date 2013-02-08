@@ -18,63 +18,73 @@ describe "Assembler.compile", ->
     if not (out instanceof Array) then out = out.lines
     out.map (dline) -> dline.toString()
 
-  it "optimizes a simple set", ->
-    dump(build([ "set a, 0" ])).should.eql([
-      "0x0000: 0x8401"
-    ])
+  describe "optimizations", ->
+    it "optimizes a simple set", ->
+      dump(build([ "set a, 0" ])).should.eql([
+        "0x0000: 0x8401"
+      ])
 
-  it "optimizes a one-operand", ->
-    dump(build([ "hwi 3" ])).should.eql([
-      "0x0000: 0x9240"
-    ])
+    it "optimizes a one-operand", ->
+      dump(build([ "hwi 3" ])).should.eql([
+        "0x0000: 0x9240"
+      ])
 
-  it "optimizes the hlt macro", ->
-    dump(build([ "hlt" ])).should.eql([
-      "0x0000: 0x8b83"
-    ])
+    it "optimizes the hlt macro", ->
+      dump(build([ "hlt" ])).should.eql([
+        "0x0000: 0x8b83"
+      ])
 
-  it "doesn't shrink the first operand", ->
-    dump(build([ "set 3, 4" ])).should.eql([
-      "0x0000: 0x97e1, 0x0003"
-    ])
+    it "doesn't shrink the first operand", ->
+      dump(build([ "set 3, 4" ])).should.eql([
+        "0x0000: 0x97e1, 0x0003"
+      ])
 
-  it "optimizes bra forward", ->
-    code = [
-      ".org 0x200"
-      "bra 0x204"
-    ]
-    dump(build(code)).should.eql([
-      "0x0200: "
-      "0x0200: 0x9382"
-    ])
+    it "optimizes bra forward", ->
+      code = [
+        ".org 0x200"
+        "bra 0x204"
+      ]
+      dump(build(code)).should.eql([
+        "0x0200: "
+        "0x0200: 0x9382"
+      ])
 
-  it "optimizes bra backward", ->
-    code = [
-      ".org 0x200"
-      "bra 0x1f0"
-    ]
-    dump(build(code)).should.eql([
-      "0x0200: "
-      "0x0200: 0xcb83"
-    ])
+    it "optimizes bra backward", ->
+      code = [
+        ".org 0x200"
+        "bra 0x1f0"
+      ]
+      dump(build(code)).should.eql([
+        "0x0200: "
+        "0x0200: 0xcb83"
+      ])
 
-  it "optimizes sub x, 65530 to add x, 6", ->
-    code = [
-      "sub x, 65530"
-    ]
-    dump(build(code)).should.eql([
-      "0x0000: 0x9c62"
-    ])
+    it "optimizes sub sp, 65530 to add sp, 6", ->
+      code = [
+        "sub sp, 65530"
+      ]
+      dump(build(code)).should.eql([
+        "0x0000: 0x9f62"
+      ])
 
-  it "optimizes sub x, 65530 in an expression to add x, 6", ->
-    code = [
-      ".define home 65500"
-      "sub x, home + 30"
-    ]
-    dump(build(code)).should.eql([
-      "0x0000: "
-      "0x0000: 0x9c62"
-    ])
+    it "optimizes sub sp, 65530 in an expression to add sp, 6", ->
+      code = [
+        ".define home 65500"
+        "sub sp, home + 30"
+      ]
+      dump(build(code)).should.eql([
+        "0x0000: "
+        "0x0000: 0x9f62"
+      ])
+
+    it "only optimizes add/sub on sp/pc", ->
+      code = [
+        "sub x, 65530"
+      ]
+      dump(build(code)).should.eql([
+        "0x0000: 0x7c63, 0xfffa"
+      ])
+
 
   it "compiles a small program", ->
     code = [

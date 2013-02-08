@@ -16,6 +16,8 @@ describe "Assembler.compileLine", ->
       parser.debugger = console.log
       console.log "-----"
     dline = a.compileLine(parser.parseLine(text), address)
+    if symbols.resolve
+      a.resolveLine(dline)
     [ dline, a.symtab ]
 
   it "compiles a simple set", ->
@@ -52,8 +54,7 @@ describe "Assembler.compileLine", ->
       dline.toString().should.eql("0x0200: 0x6381")
 
     it "compiles bra forward", ->
-      [ dline, symtab ] = compileLine("bra exit", 0x200, exit: 0x204)
-      dline.resolve(symtab)
+      [ dline, symtab ] = compileLine("bra exit", 0x200, exit: 0x204, resolve: true)
       dline.flatten()
       dline.toString().should.eql("0x0200: 0x7f82, 0x0002")
 
