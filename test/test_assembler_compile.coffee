@@ -192,82 +192,64 @@ describe "Assembler.compile", ->
       "0x0000: 0xbc01"
     ])
 
-#   it "can do negative offsets", ->
-#     code = [
-#       "set x, [j-1]"
-#       "set y, [j-2]"
-#     ]
-#     build(code).should.eql([
-#       { org: 0, data: [ 0x5c61, 0xffff, 0x5c81, 0xfffe ] }
-#     ])
+  it "can do negative offsets", ->
+    code = [
+      "set x, [j-1]"
+      "set y, [j-2]"
+    ]
+    dump(build(code).pack()).should.eql([
+      "0x0000: 0x5c61, 0xffff, 0x5c81, 0xfffe"
+    ])
 
-#   it "allows directives to start with .", ->
-#     code = [
-#       "  set a, -1"
-#       ".org 0x100"
-#       ".equ yellow 2"
-#       "  set a, yellow"
-#     ]
-#     build(code).should.eql([
-#       { org: 0, data: [ 0x8001 ] }
-#       { org: 0x100, data: [ 0x8c01 ] }
-#     ])
+  it "allows directives to start with .", ->
+    code = [
+      "  set a, -1"
+      ".org 0x100"
+      ".equ yellow 2"
+      "  set a, yellow"
+    ]
+    dump(build(code).pack()).should.eql([
+      "0x0000: 0x8001"
+      "0x0100: 0x8c01"
+    ])
 
-#   it "allows $ as current location", ->
-#     code = [
-#       "#org 0x200"
-#       "  set a, $ + 3"
-#     ]
-#     build(code).should.eql([
-#       { org: 0x200, data: [ 0x7c01, 0x203 ] }
-#     ])
+  it "allows $ as current location", ->
+    code = [
+      "#org 0x200"
+      "  set a, $ + 3"
+    ]
+    dump(build(code).pack()).should.eql([
+      "0x0200: 0x7c01, 0x0203"
+    ])
 
-#   it "tracks $ correctly through macros", ->
-#     code = [
-#       ".macro jsrr(addr) {"
-#       "  set push, pc"
-#       "  add peek, 3"
-#       "  add pc, addr - $"
-#       "}"
-#       ".org 0x1000"
-#       "jsrr(0x2000)"
-#     ]
-#     build(code).should.eql([
-#       { org: 0x1000, data: [ 0x7301, 0x9322, 0x7f82, 0xffe ] }
-#     ])
+  it "tracks $ correctly through macros", ->
+    code = [
+      ".macro jsrr(addr) {"
+      "  set push, pc"
+      "  add peek, 3"
+      "  add pc, addr - $"
+      "}"
+      ".org 0x1000"
+      "jsrr(0x2000)"
+    ]
+    dump(build(code).pack()).should.eql([
+      "0x1000: 0x7301, 0x9322, 0x7f82, 0x0ffe"
+    ])
 
-#   it "handles local labels", ->
-#     code = [
-#       ".org 0x1000"
-#       ":start"
-#       "  set a, 0"
-#       ":.1"
-#       "  ife x, 1"
-#       "    bra .1"
-#       ":end"
-#       "  jmp .1"
-#       "  set y, 0"
-#       ":.1"
-#       "  ret"
-#     ]
-#     build(code).should.eql([
-#       { org: 0x1000, data: [ 0x8401, 0x8872, 0x8f83, 0x7f81, 0x1006, 0x8481, 0x6381 ] }
-#     ])
-
-# describe "Assembler.continueCompile", ->
-#   it "compiles a small program in two pieces", ->
-#     code1 = [ "text = 0x8000", "; comment", "set a, 0" ]
-#     code2 = [ "  set [text], 0xf052", "  bor x, y" ];
-#     a = new d16bunny.Assembler(logger)
-#     rv = a.compile(code1)
-#     rv.errorCount.should.equal(0)
-#     rv = a.continueCompile(code2)
-#     rv.errorCount.should.equal(0)
-#     lines = rv.lines
-#     a.symtab.text.should.equal(0x8000)
-#     lines.length.should.equal(5)
-#     lines[0].should.eql(org: 0, data: [])
-#     lines[1].should.eql(org: 0, data: [])
-#     lines[2].should.eql(org: 0, data: [ 0x8401 ])
-#     lines[3].should.eql(org: 1, data: [ 0x7fc1, 0xf052, 0x8000 ])
-#     lines[4].should.eql(org: 4, data: [ 0x106b ])
+  it "handles local labels", ->
+    code = [
+      ".org 0x1000"
+      ":start"
+      "  set a, 0"
+      ":.1"
+      "  ife x, 1"
+      "    bra .1"
+      ":end"
+      "  jmp .1"
+      "  set y, 0"
+      ":.1"
+      "  ret"
+    ]
+    dump(build(code).pack()).should.eql([
+      "0x1000: 0x8401, 0x8872, 0x8f83, 0x7f81, 0x1006, 0x8481, 0x6381"
+    ])

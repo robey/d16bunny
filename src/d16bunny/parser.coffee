@@ -492,6 +492,8 @@ class Parser
     line.skipWhitespace()
     if line.scan("(", Span.Operator) then line.skipWhitespace()
     args = @parseMacroArgs(line)
+    # allow local labels to be passed to a macro:
+    args = args.map (x) => if x[0] == "." then @fixLabel(x) else x
     if @macros[name].indexOf(args.length) < 0
       line.rewind(m)
       line.fail "Macro '#{name}' requires #{@macros[name].join(' or ')} arguments"
