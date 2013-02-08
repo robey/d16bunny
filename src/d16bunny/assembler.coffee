@@ -51,12 +51,6 @@ class DataLine
       address += dline.data.length
     delete @expanded
 
-  resolve: (symtab) ->
-    for i in [0 ... @data.length]
-      if @data[i] instanceof Expression then @data[i] = @data[i].evaluate(symtab) & 0xffff
-    if @expanded?
-      for dline in @expanded then dline.resolve(symtab)
-
   nextAddress: ->
     address = @address
     if @expanded?
@@ -95,6 +89,7 @@ class Assembler
   # logger will be used to report errors: logger(line#, pos, message)
   # line # (y) and pos (x) are counted from zero.
   constructor: (@logger, @maxErrors = 10) ->
+    if not @logger? then @logger = (lineNumber, pos, reason) ->
     @reset()
 
   reset: ->
@@ -131,10 +126,11 @@ class Assembler
     try
       f()
     catch e
+      @debug "ERROR: ", e.message
       if e.type != "AssemblerError" then throw e
       pos = if e.pos? then e.pos else 0
       reason = if e.reason? then e.reason else e.toString()
-      @error(lineNumber, pos. reason)
+      @error(lineNumber, pos, reason)
       if @giveUp() then @error(lineNumber, pos, "Too many errors; giving up.")
       null
     
@@ -152,17 +148,21 @@ class Assembler
       @symtab = {}
       for k, v of @constants then @symtab[k] = v
       dlines = plines.map (pline) =>
-        dline = @process pline.lineNumber, => @compileLine(pline, address)
-        @debug "  data: ", dline
-        if dline? then address = dline.nextAddress()
-        dline
+        if pline?
+          dline = @process pline.lineNumber, => @compileLine(pline, address)
+          @debug "  data: ", dline
+          if dline? then address = dline.nextAddress()
+          dline
+        else
+          null
       # force all unresolved expressions, because the symtab is now complete.
       for dline in dlines
-        @process dline.pline.lineNumber, => @resolveLine(dline)
-        dline.flatten()
-        # if anything failed, fill it in with zeros.
-        for i in [0 ... dline.data.length]
-          if typeof dline.data[i] == "object" then dline.data[i] = 0
+        if dline?
+          @resolveLine(dline)
+          dline.flatten()
+          # if anything failed, fill it in with zeros.
+          for i in [0 ... dline.data.length]
+            if typeof dline.data[i] == "object" then dline.data[i] = 0
     new AssemblerOutput(@errors, dlines, @symtab)
 
   # ----- parse phase
@@ -174,11 +174,11 @@ class Assembler
     plines = []
     for text, i in textLines
       pline = @process i, => parser.parseLine(text, i)
-      break if @giveUp()
+      return [] if @giveUp()
       plines.push(pline)
     @addConstants(parser.constants)
     # resolve any expressions that can be taken care of by the constants
-    for pline in plines then pline.foldConstants(@symtab)
+    for pline in plines then if pline? then pline.foldConstants(@symtab)
     plines
 
   # given a map of (key -> expr), try to resolve them all and add them into
@@ -242,10 +242,15 @@ class Assembler
     @debug "+ resolving @ ", dline.address, ": ", dline
     @symtab["."] = dline.address
     @symtab["$"] = dline.address
-    #@debug "  symtab for resolve: ", @symtab
-    dline.resolve(@symtab)
+    dline.data = dline.data.map (item) =>
+      if item instanceof Expression
+        value = @process dline.pline.lineNumber, => item.evaluate(@symtab) & 0xffff
+        # we reported the error, so just save it as zero so we can try to continue.
+        if value? then value else 0
+      else
+        item
     # fill in any missing bits we didn't know before symbols were resolved
-    @fillInstruction(dline)
+    @fillInstruction(dline, true)
     # now that the expressions are all resolved, could this line have been
     # optimized, or compacted?
     @optimize(dline.pline)
@@ -256,10 +261,9 @@ class Assembler
         @debug "  compacted ", operand
         # signal that we have to re-run compilation
         @recompile = true
-
     if dline.expanded? then for dl in dline.expanded then @resolveLine(dl)
 
-  fillInstruction: (dline) ->
+  fillInstruction: (dline, force=false) ->
     pline = dline.pline
     if not pline.op? then return
     dline.data = [ 0 ]
@@ -268,7 +272,11 @@ class Assembler
       for i in [pline.operands.length - 1 .. 0]
         [ code, immediate ] = pline.operands[i].pack(@symtab)
         operandCodes.push(code)
-        if immediate? then dline.data.push(immediate)
+        if immediate?
+          if (immediate instanceof Expression) and force
+            dline.data.push(0)
+          else
+            dline.data.push(immediate)
     if Dcpu.BinaryOp[pline.op]?
       dline.data[0] = (operandCodes[0] << 10) | (operandCodes[1] << 5) | Dcpu.BinaryOp[pline.op]
     else if Dcpu.SpecialOp[pline.op]?
@@ -282,9 +290,11 @@ class Assembler
 
   # add/sub by a small negative constant can be flipped
   optimizeAdd: (pline) ->
-    if pline.op != "add" and pline.op != "sub" then return
+    return if pline.op != "add" and pline.op != "sub"
     value = pline.operands[1].immediateValue(@symtab)
-    if not value? or value < 0xff00 then return
+    return if not value? or value < 0xff00
+    return unless pline.operands[0].code in [ Dcpu.Specials.pc, Dcpu.Specials.sp ]
+
     pline.op = (if pline.op == "add" then "sub" else "add")
     if pline.operands[1].expr?
       pline.operands[1].expr = Expression::Unary("", 0, "-", pline.operands[1].expr)

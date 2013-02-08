@@ -9,6 +9,7 @@ class AssemblerOutput
     @lineMap = []
     for i in [0 ... @lines.length]
       line = @lines[i]
+      continue if not line?
       delete line.pline
       size = line.data.length
       continue if size == 0
