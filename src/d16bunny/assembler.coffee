@@ -53,7 +53,7 @@ class DataLine
 
   resolve: (symtab) ->
     for i in [0 ... @data.length]
-      if @data[i] instanceof Expression then @data[i] = @data[i].evaluate(symtab)
+      if @data[i] instanceof Expression then @data[i] = @data[i].evaluate(symtab) & 0xffff
     if @expanded?
       for dline in @expanded then dline.resolve(symtab)
 
@@ -100,6 +100,8 @@ class Assembler
   reset: ->
     # current symbol table for resolving named references
     @symtab = {}
+    # constants (copied into symtab) which don't change when code size changes
+    @constants = {}
     @errors = []
     @shrunk = false
 
@@ -139,19 +141,27 @@ class Assembler
   compile: (textLines, address = 0) ->
     plines = @parse(textLines)
     if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
-    dlines = plines.map (pline) =>
-      dline = @process pline.lineNumber, => @compileLine(pline, address)
-      @debug "  data: ", dline
-      if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
-      if dline? then address = dline.nextAddress()
-      dline
-    # force all unresolved expressions, because the symtab is now complete.
-    for dline in dlines
-      @process dline.pline.lineNumber, => @resolveLine(dline)
-      # if anything failed, fill it in with zeros.
-      for i in [0 ... dline.data.length]
-        if typeof dline.data[i] == "object" then dline.data[i] = 0
-#    if @errors.length == 0
+
+    # repeat the compile/resolve cycle until we stop shrinking the code size.
+    @shrunk = true
+    originalAddress = address
+    while @shrunk
+      @shrunk = false
+      address = originalAddress
+      @symtab = {}
+      for k, v of @constants then @symtab[k] = v
+      dlines = plines.map (pline) =>
+        dline = @process pline.lineNumber, => @compileLine(pline, address)
+        @debug "  data: ", dline
+        if dline? then address = dline.nextAddress()
+        dline
+      # force all unresolved expressions, because the symtab is now complete.
+      for dline in dlines
+        @process dline.pline.lineNumber, => @resolveLine(dline)
+        dline.flatten()
+        # if anything failed, fill it in with zeros.
+        for i in [0 ... dline.data.length]
+          if typeof dline.data[i] == "object" then dline.data[i] = 0
     new AssemblerOutput(@errors, dlines, @symtab)
 
   # ----- parse phase
@@ -167,7 +177,7 @@ class Assembler
       plines.push(pline)
     @addConstants(parser.constants)
     # resolve any expressions that can be taken care of by the constants
-    for pline in plines then pline.resolve(@symtab)
+    for pline in plines then pline.foldConstants(@symtab)
     plines
 
   # given a map of (key -> expr), try to resolve them all and add them into
@@ -178,13 +188,13 @@ class Assembler
     while Object.keys(unresolved).length > 0
       progress = false
       for k, v of unresolved
-        if v.resolvable(@symtab)
-          @symtab[k] = v.evaluate(@symtab)
+        if v.resolvable(@constants)
+          @constants[k] = v.evaluate(@constants) & 0xffff
           delete unresolved[k]
           progress = true
       if not progress
         for k, v of unresolved
-          @process v.lineNumber, => v.evaluate(@symtab)
+          @process v.lineNumber, => v.evaluate(@constants) & 0xffff
 
   addBuiltinMacros: (parser) ->
     for text, lineNumber in BuiltinMacros.split("\n")
@@ -209,7 +219,10 @@ class Assembler
     if pline.label? then @symtab[pline.label] = address
     if pline.data.length > 0
       data = pline.data.map (expr) =>
-        if (expr instanceof Expression) and expr.resolvable(@symtab) then expr.evaluate(@symtab) else expr
+        if (expr instanceof Expression) and expr.resolvable(@symtab)
+          expr.evaluate(@symtab) & 0xffff
+        else
+          expr
       return new DataLine(pline, address, data)
     if pline.expanded?
       dline = new DataLine(pline, address, [])
@@ -220,20 +233,13 @@ class Assembler
       return dline
     if not pline.op? then return new DataLine(pline, address, [])
 
-    # optimizations are allowed to cook up a new ParsedLine just for this round.
-    pline = @optimize(pline)
+    @optimize(pline)
 
     data = [ 0 ]
     operandCodes = []
     if pline.operands.length > 0
       for i in [pline.operands.length - 1 .. 0]
-        operand = pline.operands[i]
-        canCompact = (i == pline.operands.length - 1)
-        # do any easy compactions.
-        if canCompact and operand.checkCompact(@symtab)
-          @debug "  compacted ", operand
-          @shrunk = true
-        [ code, immediate ] = operand.pack(@symtab, canCompact)
+        [ code, immediate ] = pline.operands[i].pack(@symtab)
         operandCodes.push(code)
         if immediate? then data.push(immediate)
     if Dcpu.BinaryOp[pline.op]?
@@ -248,7 +254,15 @@ class Assembler
     @symtab["."] = dline.address
     @symtab["$"] = dline.address
     dline.resolve(@symtab)
-    dline.flatten()
+    # now that the expressions are all resolved, could this line have been compacted?
+    operands = dline.pline.operands
+    if operands.length > 0
+      operand = operands[operands.length - 1]
+      if operand.checkCompact(@symtab)
+        @debug "  compacted ", operand
+        # signal that we have to re-run compilation
+        @shrunk = true
+    if dline.expanded? then for dl in dline.expanded then @resolveLine(dl)
 
   # ----- optimizations
 
@@ -257,14 +271,16 @@ class Assembler
 
   # add/sub by a small negative constant can be flipped
   optimizeAdd: (pline) ->
-    if pline.op != "add" and pline.op != "sub" then return pline
+    if pline.op != "add" and pline.op != "sub" then return
     value = pline.operands[1].immediateValue(@symtab)
-    if not value? or value < 0xff00 then return pline
-    newline = pline.clone()
-    newline.op = (if pline.op == "add" then "sub" else "add")
-    newline.operands[1].immediate = 0x10000 - value
-    @debug "  optimize/add: ", newline
-    newline
+    if not value? or value < 0xff00 then return
+    pline.op = (if pline.op == "add" then "sub" else "add")
+    if pline.operands[1].expr?
+      pline.operands[1].expr = Expression::Unary("", 0, "-", pline.operands[1].expr)
+      pline.operands[1].immediate = null
+    else
+      pline.operands[1].immediate = 0x10000 - value
+    @debug "  optimize/add: ", pline
 
 
 

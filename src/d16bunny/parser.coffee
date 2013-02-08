@@ -52,9 +52,13 @@ class ParsedLine
   # resolve (permanently) any expressions that can be resolved by this
   # symtab. this is used as an optimization to take care of constants before
   # iterating over labels that move.
-  resolve: (symtab) ->
-    for x in @operands then x.resolve(symtab)
-    @data = @data.map (x) => if (x instanceof Expression) and x.resolvable(symtab) then x.evaluate(symtab) else x
+  foldConstants: (symtab) ->
+    for x in @operands then x.foldConstants(symtab)
+    @data = @data.map (x) =>
+      if (x instanceof Expression) and x.resolvable(symtab)
+        x.evaluate(symtab)
+      else
+        x
 
 
 class Macro

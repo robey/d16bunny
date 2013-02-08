@@ -123,15 +123,15 @@ describe "Assembler.compile", ->
     out.lineToMem(7)?.should.equal(false)
     out.lineToMem(8).should.equal(0x208)
 
-#   it "can resolve recursive labels", ->
-#     code = [
-#       "yellow = 14"
-#       "bgcolor = yellow"
-#       "set a, yellow"
-#     ]
-#     build(code).should.eql([
-#       { org: 0, data: [ 0xbc01 ] }
-#     ])
+  it "can resolve recursive labels", ->
+    code = [
+      "yellow = 14"
+      "bgcolor = yellow"
+      "set a, yellow"
+    ]
+    dump(build(code).pack()).should.eql([
+      "0x0000: 0xbc01"
+    ])
 
 #   it "can do negative offsets", ->
 #     code = [
