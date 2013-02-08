@@ -182,9 +182,10 @@ class Parser
     line.skipWhitespace()
     if line.finished() then return pline
 
+    sol = line.mark()
     if line.scan("#", Span.Directive) or line.scan(".", Span.Directive)
-      @parseDirective(line, pline)
-      return pline
+      if @parseDirective(line, pline) then return pline
+      line.rewind(sol)
     if @ignoring then return pline
 
     if @inMacro
@@ -386,6 +387,7 @@ class Parser
 
   # read a list of data objects, which could each be an expression or a string.
   parseData: (line, pline) ->
+    delete pline.op
     pline.data = []
     line.skipWhitespace()
     while not line.finished()
@@ -422,11 +424,12 @@ class Parser
     pline.directive = line.parseWord("Directive", Span.Directive)
     line.skipWhitespace()
     if pline.directive in [ "if", "else", "endif" ]
+      if @inMacro then return false
       switch pline.directive
         when "if" then @parseIfDirective(line, pline)
         when "else" then @parseElseDirective(line, pline)
         when "endif" then @parseEndifDirective(line, pline)
-      return
+      return true
     # no other directives count if we're in the ignoring part of an if-block.
     if @ignoring then return
     switch pline.directive
@@ -437,6 +440,7 @@ class Parser
       else
         line.rewind(m)
         line.fail "Unknown directive: #{directive}"
+    true
 
   parseDefineDirective: (line, pline) ->
     delete pline.directive
