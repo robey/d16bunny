@@ -210,6 +210,11 @@ describe "Parser", ->
       pline.toString().should.eql(":last SET <8>, <31, 44>")
       html.should.eql("{label::last} {instruction:set} {operator:[}{register:a}{operator:],} {string:&#39;,&#39;}")
 
+    it "parses pick", ->
+      [ pline, html ] = parseLine("set a, PICK 3")
+      pline.toString().should.eql("SET <0>, <26, 3>")
+      html.should.eql("{instruction:set} {register:a}{operator:,} {register:PICK} {number:3}")
+
     it "parses a definition with =", ->
       [ pline, html, constants ] = parseLine("screen = 0x8000")
       constants["screen"].evaluate().should.eql(0x8000)

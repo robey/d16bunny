@@ -80,7 +80,7 @@ class Line
 
   scan: (s, type) ->
     len = s.length
-    if @pos + len <= @end and @text[@pos ... @pos + len] == s
+    if @pos + len <= @end and @text[@pos ... @pos + len].toLowerCase() == s
       @addSpan(type, @pos, @pos + len)
       @pos += len
       true
@@ -92,7 +92,7 @@ class Line
 
   scanAhead: (s) ->
     len = s.length
-    @pos + len <= @end and @text[@pos ... @pos + len] == s
+    @pos + len <= @end and @text[@pos ... @pos + len].toLowerCase() == s
 
   match: (regex, type) ->
     m = regex.exec(@text[@pos...])
