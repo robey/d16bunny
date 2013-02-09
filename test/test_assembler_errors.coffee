@@ -39,8 +39,17 @@ describe "Assembler.compile with errors", ->
     out.errors[10][2].should.match(/giving up/)
 
   it "can find an error after a few blank lines", ->
+    code = [ "set a, []", "", "", "what" ]
+    out = build(code)
+    out.errors[0][0..1].should.eql([ 0, 8 ])
+    out.errors[0][2].should.match(/expression/)
+    out.errors[1][0..1].should.eql([ 3, 0 ])
+    out.errors[1][2].should.match(/what/)
+
+  it "can find an error that fell out of a macro expansion", ->
+    # intentionally use a missing symbol, which won't get caught till the resolve stage.
     code = [ "jmp nothing", "", "", "what" ]
-    out = build(code, debugging: true)
+    out = build(code)
     out.errors[1][0..1].should.eql([ 0, 4 ])
     out.errors[1][2].should.match(/nothing/)
     out.errors[0][0..1].should.eql([ 3, 0 ])

@@ -91,3 +91,32 @@ describe "Parser macros", ->
     label = pline.expanded[1].label
     (label.match(/bra\.(.*?)\.next/)?).should.equal(true)
     pline.toString().should.eql("{ ADD <28>, <31, (4096 - #{label})>; :#{label}  }")
+
+  it "parses the argument offsets correctly for error handling", ->
+    parser = new d16bunny.Parser()
+    for text in [
+      "#macro test(r1, r2) {"
+      "  dat r1, r2"
+      "}"
+    ] then parser.parseLine(text)
+    pline = parser.parseLine("test 0xffff, 0x1000")
+    # kinda lame, but just verify the exact arg offsets
+    pline.expanded[0].macroArgOffsets.should.eql([
+      { arg: 0, left: 6, right: 12 }
+      { arg: 1, left: 14, right: 20 }
+    ])
+
+  it "transforms an invalid macro parameter into an error at the caller", ->
+    parser = new d16bunny.Parser()
+    for text in [
+      "#macro test(r1, r2) {"
+      "  dat r1, r2"
+      "}"
+    ] then parser.parseLine(text)
+    try
+      parser.parseLine("test 0xffff, 99%")
+      throw "fail"
+    catch e
+      e.type.should.eql("AssemblerError")
+      e.pos.should.equal(13)
+      e.message.should.match(/test/)

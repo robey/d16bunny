@@ -19,6 +19,10 @@ class ParsedLine
     @operands = []      # array of expressions
     @data = []          # array of expressions, if this is a line of raw data
     @expanded = null    # list of other Line objects, if this is an expanded macro
+    # for an expanded macro, an array of info linking spans of the new line
+    # to the original arguments, so that errors caused by arguments can be
+    # traced back to the caller.
+    @macroArgOffsets = null
 
   toString: ->
     [
@@ -67,14 +71,17 @@ class Macro
     @error = null
     @parameterMatchers = @parameters.map (p) -> new RegExp("\\b#{p}\\b", "g")
 
-  invoke: (parser, args) ->
+  invoke: (parser, pline, args) ->
     parser.debug "  macro expansion of ", @fullname, ":"
     newTextLines = for text in @textLines
       # textual substitution, no fancy stuff.
+      argOffsets = []
       for i in [0 ... args.length]
-        text = text.replace(@parameterMatchers[i], args[i])
+        text = text.replace @parameterMatchers[i], (original, offset) =>
+          argOffsets.push(left: offset, right: offset + args[i].length, arg: i)
+          args[i]
       parser.debug "  -- ", text
-      text
+      [ text, argOffsets ]
     parser.debug "  --."
 
     # prefix relative labels with a unique tag
@@ -82,12 +89,16 @@ class Macro
 
     plines = []
     try
-      for text in newTextLines
+      for [ text, argOffsets ] in newTextLines
         try
           pline = parser.parseLine(text)
         catch e
           if e.type == "AssemblerError" and @error? then e.setReason(@error)
+          for argOffset in argOffsets
+            if e.pos >= argOffset.left and e.pos <= argOffset.right
+              throw new AssemblerError(pline.line.text, pline.macroArgIndexes[argOffset.arg], e.reason)
           throw e
+        pline.macroArgOffsets = argOffsets
         if pline.directive? then pline.line.fail "Macros can't have directives in them"
         if pline.expanded?
           # nested macros are okay, but unpack them.
@@ -491,24 +502,29 @@ class Parser
     name = line.parseWord("Macro name", Span.Identifier)
     line.skipWhitespace()
     if line.scan("(", Span.Operator) then line.skipWhitespace()
-    args = @parseMacroArgs(line)
+    [ args, argIndexes ] = @parseMacroArgs(line)
+    pline.macroArgIndexes = argIndexes
     # allow local labels to be passed to a macro:
     args = args.map (x) => if x[0] == "." then @fixLabel(x) else x
     if @macros[name].indexOf(args.length) < 0
       line.rewind(m)
       line.fail "Macro '#{name}' requires #{@macros[name].join(' or ')} arguments"
-    pline.expanded = @macros["#{name}(#{args.length})"].invoke(@, args)
+    pline.expanded = @macros["#{name}(#{args.length})"].invoke(@, pline, args)
     pline
 
   # don't overthink this. we want literal text substitution.
   parseMacroArgs: (line) ->
     args = []
+    argIndexes = []
     line.skipWhitespace()
     while not line.finished()
-      if line.scan(")", Span.Operator) then return args
+      if line.scan(")", Span.Operator) then return [ args, argIndexes ]
+      index = line.pos
       args.push(line.parseMacroArg())
-      if line.scan(",", Span.Operator) then line.skipWhitespace()
-    args
+      argIndexes.push(index)
+      line.scan(",", Span.Operator)
+      line.skipWhitespace()
+    [ args, argIndexes ]
 
   parseIfDirective: (line, pline) ->
     line.skipWhitespace()

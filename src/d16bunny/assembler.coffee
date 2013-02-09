@@ -121,15 +121,15 @@ class Assembler
 
   # internal: call a function, catching and reporting assembler errors.
   # returns null on error (or if there have been too many errors already).
-  process: (lineNumber, f) ->
+  process: (lineNumber, f, transformer) ->
     if @giveUp() then return null
     try
       f()
     catch e
-      @debug "ERROR: ", e.message
       if e.type != "AssemblerError" then throw e
       pos = if e.pos? then e.pos else 0
       reason = if e.reason? then e.reason else e.toString()
+      if transformer? then [ lineNumber, pos, reason ] = transformer(lineNumber, pos, reason)
       @error(lineNumber, pos, reason)
       if @giveUp() then @error(lineNumber, pos, "Too many errors; giving up.")
       null
@@ -149,6 +149,7 @@ class Assembler
       for k, v of @constants then @symtab[k] = v
       dlines = plines.map (pline) =>
         if pline?
+          # FIXME i don't think compileLine can throw an exception anymore.
           dline = @process pline.lineNumber, => @compileLine(pline, address)
           @debug "  data: ", dline
           if dline? then address = dline.nextAddress()
@@ -199,7 +200,7 @@ class Assembler
 
   addBuiltinMacros: (parser) ->
     for text, lineNumber in BuiltinMacros.split("\n")
-      parser.parseLine(text, lineNumber)
+      parser.parseLine(text, -1)
 
   # ----- compile phase
 
@@ -238,13 +239,13 @@ class Assembler
     @fillInstruction(dline)
     dline
 
-  resolveLine: (dline) ->
+  resolveLine: (dline, transformer=null) ->
     @debug "+ resolving @ ", dline.address, ": ", dline
     @symtab["."] = dline.address
     @symtab["$"] = dline.address
     dline.data = dline.data.map (item) =>
       if item instanceof Expression
-        value = @process dline.pline.lineNumber, => item.evaluate(@symtab) & 0xffff
+        value = @process dline.pline.lineNumber, (=> item.evaluate(@symtab) & 0xffff), transformer
         # we reported the error, so just save it as zero so we can try to continue.
         if value? then value else 0
       else
@@ -261,7 +262,14 @@ class Assembler
         @debug "  compacted ", operand
         # signal that we have to re-run compilation
         @recompile = true
-    if dline.expanded? then for dl in dline.expanded then @resolveLine(dl)
+    if dline.expanded?
+      for dl in dline.expanded
+        transformer = (y, x, reason) =>
+          for argOffset in dl.pline.macroArgOffsets then if x >= argOffset.left and x <= argOffset.right
+            y = dline.pline.lineNumber
+            x = dline.pline.macroArgIndexes[argOffset.arg]
+          [ y, x, reason ]
+        @resolveLine(dl, transformer)
 
   fillInstruction: (dline, force=false) ->
     pline = dline.pline
