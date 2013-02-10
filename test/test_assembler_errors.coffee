@@ -5,7 +5,8 @@ pp = d16bunny.pp
 
 describe "Assembler.compile with errors", ->
   build = (code, options={}) ->
-    a = new d16bunny.Assembler()
+    logger = (y, x, reason) => if options.log? then options.log.push([ y, x, reason ])
+    a = new d16bunny.Assembler(logger)
     if options.debugging?
       a.debugger = console.log
       console.log "----------"
@@ -54,3 +55,20 @@ describe "Assembler.compile with errors", ->
     out.errors[1][2].should.match(/nothing/)
     out.errors[0][0..1].should.eql([ 3, 0 ])
     out.errors[0][2].should.match(/what/)
+
+  it "correctly idenitfies an error location in BRA", ->
+    code = [ "bra [x]" ]
+    out = build(code, debugging: true)
+    out.errors[0][0..1].should.eql([ 0, 4 ])
+    out.errors[0][2].should.match(/BRA/)
+
+  it "only throws one error for a missing reference", ->
+    code = [
+      "jmp exit"
+      "set a, [xy]"
+      ":exit ret"
+    ]
+    log = []
+    out = build(code, log: log)
+    out.errors.length.should.equal(1)
+    log.length.should.equal(1)

@@ -112,6 +112,8 @@ class Assembler
     throw new AssemblerError(@text, x, message)
 
   error: (lineNumber, pos, reason) ->
+    # because we do multiple resolve-phase passes, we might log the same error twice.
+    for x in @errors then if x[0] == lineNumber and x[1] == pos and x[2] == reason then return
     @debug "  error on line #{lineNumber} at #{pos}: #{reason}"
     @logger(lineNumber, pos, reason)
     @errors.push([ lineNumber, pos, reason ])
