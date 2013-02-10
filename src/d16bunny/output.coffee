@@ -1,4 +1,4 @@
-assembler = require("./assembler")
+DataLine = require("./assembler").DataLine
 
 class AssemblerOutput
   # errors: array of errors discovered (and previously reported through
@@ -22,7 +22,7 @@ class AssemblerOutput
   pack: ->
     if @cachedPack? then return @cachedPack
     if @errors.length > 0 or @lines.length == 0 then return []
-    @cachedPack = assembler.DataLine.pack(@lines)
+    @cachedPack = @lines[0].pack(@lines)
     @cachedPack
 
   # return the line # of an address in the compiled code. if it's not an

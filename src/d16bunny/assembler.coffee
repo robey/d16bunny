@@ -59,29 +59,29 @@ class DataLine
     address += @data.length
     address
 
-# pack a sequence of DataLine objects (one per line) into a smaller array.
-# in theory, each new DataLine object should have all the data between two
-# ORG changes. the new DataLine array is sorted in address order. ParsedLine
-# information is removed.
-DataLine.pack = (dlines) -> 
-  i = 0
-  end = dlines.length
-  blocks = []
-  while i < end
-    runStart = i
-    addressStart = address = dlines[i].address
-    while i < end and dlines[i].address == address
-      address += dlines[i].data.length
-      i++
-    data = new Array(address - addressStart)
-    n = 0
-    for j in [runStart...i]
-      k = dlines[j].data.length
-      data[n ... n + k] = dlines[j].data
-      n += k
-    if data.length > 0 then blocks.push(new DataLine(null, addressStart, data))
-  blocks.sort((a, b) -> a.address > b.address)
-  blocks
+  # pack a sequence of DataLine objects (one per line) into a smaller array.
+  # in theory, each new DataLine object should have all the data between two
+  # ORG changes. the new DataLine array is sorted in address order. ParsedLine
+  # information is removed.
+  pack: (dlines) -> 
+    i = 0
+    end = dlines.length
+    blocks = []
+    while i < end
+      runStart = i
+      addressStart = address = dlines[i].address
+      while i < end and dlines[i].address == address
+        address += dlines[i].data.length
+        i++
+      data = new Array(address - addressStart)
+      n = 0
+      for j in [runStart...i]
+        k = dlines[j].data.length
+        data[n ... n + k] = dlines[j].data
+        n += k
+      if data.length > 0 then blocks.push(new DataLine(null, addressStart, data))
+    blocks.sort((a, b) -> a.address > b.address)
+    blocks
 
 
 # compile lines of DCPU assembly.

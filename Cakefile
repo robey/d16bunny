@@ -36,6 +36,7 @@ synctask = (name, description, f) ->
 
 assemblerFiles = [
   "assembler",
+  "builtins",
   "dcpu",
   "errors",
   "expression",

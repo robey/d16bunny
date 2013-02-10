@@ -19,7 +19,6 @@ Span.Label = "label"
 
 # for parsing a line of text, and syntax highlighting
 class Line
-
   constructor: (@text) ->
     @pos = 0            # current index within text
     @end = @text.length # parsing should not continue past end
@@ -120,6 +119,7 @@ class Line
     start = @pos
     @pos += 2
     rv = switch @text[@pos - 1]
+      when 'e' then "\x1b"
       when 'n' then "\n"
       when 'r' then "\r"
       when 't' then "\t"
