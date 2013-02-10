@@ -14,7 +14,7 @@ class AssemblerOutput
       size = line.data.length
       continue if size == 0
       @lineMap.push(address: line.address, end: line.address + size, lineno: i)
-    @lineMap.sort((a, b) -> if a.org > b.org then 1 else -1)
+    @lineMap.sort((a, b) -> if a.address > b.address then 1 else -1)
 
   # pack the compiled line data into an array of contiguous memory blocks,
   # suitable for copying into an emulator or writing out to an object file.
