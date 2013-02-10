@@ -8,13 +8,20 @@ class PrettyPrinter
     "\u001b[" + @colors[colorIndex] + "m" + s + "\u001b[0m"
 
   dump: (obj, colorIndex = 0) ->
+    if obj is null then return @inColor("null", colorIndex)
     switch typeof obj
       when 'undefined' then @inColor("undefined", colorIndex)
       when 'string' then @inColor(@dumpString(obj), colorIndex)
-      when 'number' then @inColor("0x" + obj.toString(16), colorIndex)
+      when 'number'
+        if obj < 16
+          @inColor(obj.toString(10), colorIndex)
+        else
+          @inColor("0x" + obj.toString(16), colorIndex)
       when 'object'
         if obj instanceof Array
           @dumpArray(obj, colorIndex + 1)
+        else if obj instanceof RegExp
+          @inColor(obj.toString(), colorIndex)
         else
           @dumpObject(obj, colorIndex + 1)
       else @inColor(obj.toString(), colorIndex)
@@ -51,4 +58,8 @@ class PrettyPrinter
         out += s[i]
     "\"" + out + "\""
 
-exports.prettyPrinter = new PrettyPrinter
+prettyPrinter = new PrettyPrinter()
+pp = (x) -> prettyPrinter.dump(x)
+
+exports.prettyPrinter = prettyPrinter
+exports.pp = pp

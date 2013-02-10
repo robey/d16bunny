@@ -4,13 +4,13 @@ AssemblerError = require('./errors').AssemblerError
 
 # an expression tree.
 class Expression
-  Register: (text, pos, r) ->
+  Register: (text, pos, name) ->
     e = new Expression(text, pos)
-    e.register = r
+    e.register = name.toLowerCase()
     e.evaluate = (symtab) ->
       throw new AssemblerError(@text, @pos, "Constant expressions may not contain register references")
-    e.toString = -> Dcpu.RegisterNames[@register] if @register
-    e.resolvable = (symtab) -> true
+    e.toString = -> @register.toUpperCase()
+    e.resolvable = (symtab={}) -> true
     e
 
   Literal: (text, pos, n) ->
@@ -20,20 +20,18 @@ class Expression
     e.literal = n
     e.evaluate = (symtab) -> @literal
     e.toString = -> @literal.toString()
-    e.resolvable = (symtab) -> true
+    e.resolvable = (symtab={}) -> true
     e
 
   Label: (text, pos, x) ->
     e = new Expression(text, pos)
     e.label = x
     e.evaluate = (symtab) ->
-      if Dcpu.Reserved[@label]
-        throw new AssemblerError(@text, @pos, "You can't use " + @label.toUpperCase() + " in expressions.")
       if not symtab[@label]?
         throw new AssemblerError(@text, @pos, "Can't resolve reference to " + @label)
       symtab[@label]
     e.toString = -> @label
-    e.resolvable = (symtab) -> symtab[@label]?
+    e.resolvable = (symtab={}) -> symtab[@label]?
     e
 
   Unary: (text, pos, op, r) ->
@@ -46,7 +44,7 @@ class Expression
         when '-' then -r
         else r
     e.toString = -> "(" + @unary + @right.toString() + ")"
-    e.resolvable = (symtab) -> @right.resolvable(symtab)
+    e.resolvable = (symtab={}) -> @right.resolvable(symtab)
     e
 
   Binary: (text, pos, op, l, r) ->
@@ -68,9 +66,15 @@ class Expression
         when '&' then l & r
         when '^' then l ^ r
         when '|' then l | r
+        when '<' then (if l < r then 1 else 0)
+        when '>' then (if l > r then 1 else 0)
+        when '<=' then (if l <= r then 1 else 0)
+        when '>=' then (if l >= r then 1 else 0)
+        when '==' then (if l == r then 1 else 0)
+        when '!=' then (if l != r then 1 else 0)
         else throw new AssemblerError(@text, @pos, "Internal error (undefined binary operator)")
     e.toString = -> "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")"
-    e.resolvable = (symtab) -> @left.resolvable(symtab) and @right.resolvable(symtab)
+    e.resolvable = (symtab={}) -> @left.resolvable(symtab) and @right.resolvable(symtab)
     e
 
   constructor: (@text, @pos) ->
@@ -78,12 +82,13 @@ class Expression
   # for debugging.
   toString: -> throw "must be implemented in objects"
 
+  # return true if this expression can be resolved into a final value, given
+  # this symtab.
+  resolvable: (symtab={}) -> throw "must be implemented in objects"
+
   # Given a symbol table of names and values, resolve this expression tree
   # into a single number. Any register reference, or reference to a symbol
   # that isn't defined in 'symtab' will be an error.
-  evaluate: (symtab) -> throw "must be implemented in objects"
-
-  # can this expression's references be resolved by the symtab (yet)?
-  resolvable: (symtab) -> throw "must be implemented in objects"
+  evaluate: (symtab={}) -> throw "must be implemented in objects"
 
 exports.Expression = Expression

@@ -53,6 +53,8 @@ Dcpu =
 
 Dcpu.Reserved = (x for x of Dcpu.Registers).concat(x for x of Dcpu.Specials)
 
+Dcpu.RegisterRegex = new RegExp("^(" + Dcpu.Reserved.join("|") + ")\\b", "i")
+
 Dcpu.ReservedOp = (x for x of Dcpu.BinaryOp).concat(x for x of Dcpu.SpecialOp).concat(
   [ "jmp", "hlt", "ret", "bra", "dat", "org", "equ" ])
 
