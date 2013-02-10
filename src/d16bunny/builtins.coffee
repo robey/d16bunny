@@ -16,7 +16,7 @@ BuiltinMacros = """
 }
 
 .macro bra(addr) {
-.error "Illegal argument to BRA."
+.onerror "Illegal argument to BRA."
   add pc, addr - .next
 :.next
 }

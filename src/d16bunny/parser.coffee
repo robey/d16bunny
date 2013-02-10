@@ -68,7 +68,7 @@ class ParsedLine
 class Macro
   constructor: (@name, @fullname, @parameters) ->
     @textLines = []
-    @error = null
+    @onError = null
     @parameterMatchers = @parameters.map (p) -> new RegExp("\\b#{p}\\b", "g")
 
   invoke: (parser, pline, args) ->
@@ -93,11 +93,14 @@ class Macro
         try
           pline = parser.parseLine(text)
         catch e
-          if e.type == "AssemblerError" and @error? then e.setReason(@error)
+          if e.type != "AssemblerError" then throw e
+          parser.debug "  error in macro invocation: pos=", e.pos, " args=", argOffsets, " reason=", e.reason
+          if @onError? then e.setReason(@onError)
           for argOffset in argOffsets
             if e.pos >= argOffset.left and e.pos <= argOffset.right
               throw new AssemblerError(pline.line.text, pline.macroArgIndexes[argOffset.arg], e.reason)
-          throw e
+          # hm. just point to the main arg then?
+          throw new AssemblerError(pline.line.text, (if args.length > 0 then pline.macroArgIndexes[0] else 0), e.reason)
         pline.macroArgOffsets = argOffsets
         if pline.directive? then pline.line.fail "Macros can't have directives in them"
         if pline.expanded?
@@ -447,7 +450,7 @@ class Parser
       when "macro" then @parseMacroDirective(line, pline)
       when "define", "equ" then @parseDefineDirective(line, pline)
       when "org" then @parseOrgDirective(line, pline)
-      when "error" then @parseErrorDirective(line, pline)
+      when "onerror" then @parseOnErrorDirective(line, pline)
       else
         line.rewind(m)
         line.fail "Unknown directive: #{directive}"
@@ -553,11 +556,11 @@ class Parser
     @ifStack.pop()
     if @ifStack.length > 0 then @ignoring = @ifStack[@ifStack.length - 1]
 
-  parseErrorDirective: (line, pline) ->
-    if not @inMacro? then line.fail "Can only use .error inside macros"
+  parseOnErrorDirective: (line, pline) ->
+    if not @inMacro? then line.fail "Can only use .onerror inside macros"
     line.skipWhitespace()
-    @macros[@inMacro].error = line.parseString()
-    if not line.finished() then line.fail "Unexpected content after .error"
+    @macros[@inMacro].onError = line.parseString()
+    if not line.finished() then line.fail "Unexpected content after .onerror"
 
 
 exports.Line = Line
