@@ -19,7 +19,7 @@ Span.Label = "label"
 
 # for parsing a line of text, and syntax highlighting
 class Line
-  constructor: (@text) ->
+  constructor: (@text, @options={}) ->
     @pos = 0            # current index within text
     @end = @text.length # parsing should not continue past end
     @spans = []         # spans for syntax highlighting
@@ -67,7 +67,8 @@ class Line
     rv
 
   fail: (message) ->
-    throw new AssemblerError(@text, @pos, message)
+    unless @options.ignoreErrors
+      throw new AssemblerError(@text, @pos, message)
 
   finished: -> @pos == @end
 
@@ -76,6 +77,9 @@ class Line
   rewind: (m) ->
     @pos = m.pos
     @spans = @spans[0 ... m.spanLength]
+
+  pointTo: (m) ->
+    @pos = m.pos
 
   scan: (s, type) ->
     len = s.length

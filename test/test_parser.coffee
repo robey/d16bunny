@@ -246,6 +246,17 @@ describe "Parser", ->
       html.should.eql("{instruction:dat} {number:3}{operator:,} {number:9}{operator:,} " +
         "{string:&#39;@&#39;}{operator:,} {string:&quot;cat&quot;}{operator:,} {string:p&quot;cat&quot;}")
 
+    it "parses data with unresolved expression", ->
+      [ pline, html ] = parseLine("dat 3, 9, cat + 1")
+      pline.toString().should.eql("")
+      pline.data[0].evaluate().should.eql(3)
+      pline.data[1].evaluate().should.eql(9)
+      pline.data[2].resolvable().should.eql(false)
+      pline.data[2].resolvable(cat: 9).should.eql(true)
+      pline.data[2].evaluate(cat: 9).should.eql(10)
+      pline.toDebug().should.eql("{instruction:dat} {number:3}{operator:,} {number:9}{operator:,} " +
+        "{identifier:cat} {operator:+} {number:1}")
+
     it "parses rom strings", ->
       [ pline, html ] = parseLine("dat r\"cat\"")
       pline.toString().should.eql("")
@@ -262,16 +273,21 @@ describe "Parser", ->
       pline.data.should.eql([ 3 ])
       html.should.eql("  {directive:org} {number:3}")
 
-  it "disallows an unknown opcode", ->
-    (-> parseLine("qxq 9", 0x200)).should.throw(/qxq/)
+    it "disallows an unknown opcode", ->
+      (-> parseLine("qxq 9", 0x200)).should.throw(/qxq/)
 
-  it "requires binary operations to have 2 arguments", ->
-    (-> parseLine("add x", 0x200)).should.throw(/requires 2 arguments/)
-    (-> parseLine("add x, y, z", 0x200)).should.throw(/requires 2 arguments/)
+    it "requires binary operations to have 2 arguments", ->
+      (-> parseLine("add x", 0x200)).should.throw(/requires 2 arguments/)
+      (-> parseLine("add x, y, z", 0x200)).should.throw(/requires 2 arguments/)
 
-  it "requires special operations to have 1 argument", ->
-    (-> parseLine("jsr", 0x200)).should.throw(/requires 1 argument/)
-    (-> parseLine("jsr x, y", 0x200)).should.throw(/requires 1 argument/)
+    it "requires special operations to have 1 argument", ->
+      (-> parseLine("jsr", 0x200)).should.throw(/requires 1 argument/)
+      (-> parseLine("jsr x, y", 0x200)).should.throw(/requires 1 argument/)
+
+    it "can ignore errors for syntax highlighting", ->
+      parser = new d16bunny.Parser()
+      pline = parser.parseLine("sum(3, 4)", 0, ignoreErrors: true)
+      pline.line.toDebug().should.eql("{instruction:sum}{operator:(}{string:3}{operator:,} {string:4}{operator:)}")
 
   describe "parseLine if", ->
     it "parses a simple if block", ->

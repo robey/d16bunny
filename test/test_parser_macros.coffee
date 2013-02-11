@@ -41,7 +41,7 @@ describe "Parser macros", ->
     ] then parser.parseLine(text)
     pline = parser.parseLine("  swap(x, y)")
     pline.toString().should.eql("{ SET <24>, <3>; SET <3>, <4>; SET <4>, <24> }")
-    pline.toDebug().should.eql("  {identifier:swap}{operator:(}{string:x}{operator:,} {string:y}{operator:)}")
+    pline.toDebug().should.eql("  {instruction:swap}{operator:(}{string:x}{operator:,} {string:y}{operator:)}")
 
   it "distinguishes two macros with the same name but different cardinality", ->
     parser = new d16bunny.Parser()
@@ -77,7 +77,7 @@ describe "Parser macros", ->
     ] then parser.parseLine(text)
     pline = parser.parseLine("  swap(x, y)")
     pline.toString().should.eql("{ SET <24>, <3>; SET <3>, <4>; SET <4>, <24> }")
-    pline.toDebug().should.eql("  {identifier:swap}{operator:(}{string:x}{operator:,} {string:y}{operator:)}")
+    pline.toDebug().should.eql("  {instruction:swap}{operator:(}{string:x}{operator:,} {string:y}{operator:)}")
 
   it "parses a macro form of BRA", ->
     parser = new d16bunny.Parser()

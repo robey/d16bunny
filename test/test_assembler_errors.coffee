@@ -58,7 +58,7 @@ describe "Assembler.compile with errors", ->
 
   it "correctly idenitfies an error location in BRA", ->
     code = [ "bra [x]" ]
-    out = build(code, debugging: true)
+    out = build(code)
     out.errors[0][0..1].should.eql([ 0, 4 ])
     out.errors[0][2].should.match(/BRA/)
 

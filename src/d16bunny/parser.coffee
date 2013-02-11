@@ -10,7 +10,7 @@ pp = require('./prettyprint').pp
 
 # things parsed out of a Line
 class ParsedLine
-  constructor: (@line) ->
+  constructor: (@line, @options) ->
     @label = null       # label (if any)
     @op = null          # operation (if any)
     @opPos = null       # position of operation in text
@@ -51,7 +51,8 @@ class ParsedLine
   toDebug: -> @line.toDebug()
 
   fail: (message) ->
-    throw new AssemblerError(@line.text, @opPos.pos, message)
+    unless @options.ignoreErrors
+      throw new AssemblerError(@line.text, @opPos.pos, message)
 
   # resolve (permanently) any expressions that can be resolved by this
   # symtab. this is used as an optimization to take care of constants before
@@ -188,10 +189,10 @@ class Parser
     [ @lastLabel, @labelPrefix ] = @labelStack.pop()
 
   # returns a Line object, with syntax parsed out
-  parseLine: (text, lineNumber = 0) ->
+  parseLine: (text, lineNumber=0, options={}) ->
     @debug "+ parse: ", lineNumber, ": ", text
-    line = new Line(text)
-    pline = new ParsedLine(line)
+    line = new Line(text, options)
+    pline = new ParsedLine(line, options)
     pline.lineNumber = lineNumber
     line.skipWhitespace()
     if line.finished() then return pline
@@ -202,14 +203,18 @@ class Parser
       line.rewind(sol)
     if @ignoring then return pline
 
+    if line.scan("}", Span.Directive)
+      if not @inMacro
+        line.fail "Unexpected end of macro"
+        return pline
+      @debug "  finished defining macro ", @inMacro
+      @inMacro = false
+      line.skipWhitespace()
+      if not line.finished() then line.fail "Unexpected content after end of macro"
+      return pline
+
     if @inMacro
-      if line.scan("}", Span.Directive)
-        @debug "  finished defining macro ", @inMacro
-        @inMacro = false
-        line.skipWhitespace()
-        if not line.finished() then line.fail "Unexpected content after end of macro"
-      else
-        @macros[@inMacro].textLines.push(text)
+      @macros[@inMacro].textLines.push(text)
       return pline
 
     if line.scan(":", Span.Label)
@@ -221,22 +226,20 @@ class Parser
     pline.opPos = line.mark()
     pline.op = line.parseWord("Operation name", Span.Instruction)
 
-    if @macros[pline.op]
-      line.rewind(pline.opPos)
-      delete pline.op
-      return @parseMacroCall(line, pline)
-
     if pline.op == "equ"
       # allow ":label equ <val>" for windows people
       line.rewind(pline.opPos)
+      line.scanAssert("equ", Span.Directive)
+      line.skipWhitespace()
+      expr = @parseExpression(line)
       if not pline.label?
+        line.pointTo(pline.opPos)
         line.fail "EQU must be a directive or on a line with a label"
+        return pline
       name = pline.label
       delete pline.label
       delete pline.op
-      line.scanAssert("equ", Span.Directive)
-      line.skipWhitespace()
-      @constants[name] = @parseExpression(line)
+      @constants[name] = expr
       @constants[name].lineNumber = pline.lineNumber
       line.skipWhitespace()
       if not line.finished() then line.fail "Unexpected content after definition"
@@ -269,6 +272,11 @@ class Parser
       if not line.finished() then line.fail "Unexpected content after definition"
       return pline
 
+    if not Dcpu.BinaryOp[pline.op]? and not Dcpu.SpecialOp[pline.op]?
+      line.rewind(pline.opPos)
+      delete pline.op
+      return @parseMacroCall(line, pline)
+
     # any other operation is assumed to take actual operands
     pline.operands = []
     while not line.finished()
@@ -299,7 +307,9 @@ class Parser
       return left if line.finished() or line.matchAhead(Parser::DelimiterRegex)
       m = line.mark()
       op = line.match(Parser::OperatorRegex, Span.Operator)
-      if not op? then line.fail "Unknown operator (try: + - * / % << >> & ^ |)"
+      if not op?
+        line.fail "Unknown operator (try: + - * / % << >> & ^ |)"
+        return left
       newPrecedence = Parser::Binary[op]
       if newPrecedence <= precedence
         line.rewind(m)
@@ -335,7 +345,7 @@ class Parser
       # allow unix-style %A for register names
       x = line.match(Dcpu.RegisterRegex, Span.Register)
       if not x? then line.fail "Expected register name"
-      return Expression::Register(line.text, m.pos, x.toLowerCase())
+      return Expression::Register(line.text, m.pos, x?.toLowerCase())
     x = line.match(Parser::HexRegex, Span.Number)
     if x? then return Expression::Literal(line.text, m.pos, parseInt(x, 16))
     x = line.match(Parser::BinaryRegex, Span.Number)
@@ -347,7 +357,7 @@ class Parser
     x = line.match(Parser::LabelRegex, Span.Identifier)
     if x?
       return Expression::Label(line.text, m.pos, @fixLabel(x, false))
-    line.rewind(m)
+    line.pointTo(m)
     line.fail "Expected expression"
 
   # ----- operands
@@ -373,10 +383,10 @@ class Parser
     if expr.register? 
       if Dcpu.Specials[expr.register]?
         if dereference
-          line.rewind(m)
+          line.pointTo(m)
           line.fail "You can't dereference #{expr.toString()}"
         if (destination and expr.register == "pop") or ((not destination) and expr.register == "push")
-          line.rewind(m)
+          line.pointTo(m)
           line.fail "You can't use #{expr.toString()} in this position"
         return new Operand(m.pos, Dcpu.Specials[expr.register])
       code = if dereference then Operand.RegisterDereference else Operand.Register
@@ -386,14 +396,14 @@ class Parser
       if expr.binary == '+' or (expr.binary == '-' and expr.left.register?)
         register = if expr.left.register? then expr.left.register else expr.right.register
         if not Dcpu.Registers[register]?
-          line.rewind(m)
+          line.pointTo(m)
           line.fail "You can't use #{register.toUpperCase()} in [R+n] form"
         op = expr.binary
         expr = if expr.left.register? then expr.right else expr.left
         # allow [R-n]
         if op == '-' then expr = Expression::Unary(expr.text, expr.pos, '-', expr)
         return new Operand(m.pos, Operand.RegisterIndex + Dcpu.Registers[register], expr)
-      line.rewind(m)
+      line.pointTo(m)
       line.fail "Only a register +/- a constant is allowed"
     new Operand(m.pos, (if dereference then Operand.ImmediateDereference else Operand.Immediate), expr)
 
@@ -452,7 +462,7 @@ class Parser
       when "org" then @parseOrgDirective(line, pline)
       when "onerror" then @parseOnErrorDirective(line, pline)
       else
-        line.rewind(m)
+        line.pointTo(m)
         line.fail "Unknown directive: #{directive}"
     true
 
@@ -480,7 +490,7 @@ class Parser
     line.scanAssert("{", Span.Directive)
     fullname = "#{pline.name}(#{parameters.length})"
     if @macros[fullname]?
-      line.rewind(m)
+      line.pointTo(m)
       line.fail "Duplicate definition of #{fullname}"
     @macros[fullname] = new Macro(pline.name, fullname, parameters)
     if not @macros[pline.name]? then @macros[pline.name] = []
@@ -502,17 +512,21 @@ class Parser
   # expand a macro call, recursively parsing the nested lines
   parseMacroCall: (line, pline) ->
     m = line.mark()
-    name = line.parseWord("Macro name", Span.Identifier)
+    name = line.parseWord("Macro name", Span.Instruction)
     line.skipWhitespace()
     if line.scan("(", Span.Operator) then line.skipWhitespace()
     [ args, argIndexes ] = @parseMacroArgs(line)
     pline.macroArgIndexes = argIndexes
     # allow local labels to be passed to a macro:
     args = args.map (x) => if x[0] == "." then @fixLabel(x) else x
-    if @macros[name].indexOf(args.length) < 0
-      line.rewind(m)
+    if not @macros[name]
+      line.pointTo(m)
+      line.fail "Unknown macro '#{name}'"
+    else if @macros[name].indexOf(args.length) < 0
+      line.pointTo(m)
       line.fail "Macro '#{name}' requires #{@macros[name].join(' or ')} arguments"
-    pline.expanded = @macros["#{name}(#{args.length})"].invoke(@, pline, args)
+    else
+      pline.expanded = @macros["#{name}(#{args.length})"].invoke(@, pline, args)
     pline
 
   # don't overthink this. we want literal text substitution.
@@ -535,7 +549,7 @@ class Parser
     expr = @parseExpression(line)
     if not line.finished() then line.fail "Unexpected content after IF"
     if not expr.resolvable(@constants)
-      line.rewind(m)
+      line.pointTo(m)
       line.fail "IF expression must use only constants"
     expr = expr.evaluate(@constants)
     @ignoring = (expr == 0)
