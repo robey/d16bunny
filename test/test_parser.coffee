@@ -12,7 +12,7 @@ trimHtml = (html) ->
 parseLine = (s) ->
   parser = new d16bunny.Parser()
   pline = parser.parseLine(s)
-  html = trimHtml(pline.toHtml())
+  html = pline.toDebug()
   [ pline, html, parser.constants ]
 
 describe "Parser", ->
@@ -30,88 +30,84 @@ describe "Parser", ->
   it "parses string literals", ->
     line = new d16bunny.Line("\"hello sailor\\x21\"")
     line.parseString().should.eql("hello sailor!")
-    trimHtml(line.toHtml()).should.eql("{string:&quot;hello sailor}{string-escape:\\x21}{string:&quot;}")
+    line.toDebug().should.eql("{string:\"hello sailor}{string-escape:\\x21}{string:\"}")
 
   describe "parseExpression", ->
-    html = ""
-
     parseExpression = (s) ->
       p = new d16bunny.Parser()
       line = new d16bunny.Line(s)
-      e = p.parseExpression(line)
-      html = trimHtml(line.toHtml())
-      e
+      [ p.parseExpression(line), line ]
 
     it "parses simple binary expressions", ->
-      e = parseExpression(" 2 + 5 * x + smile")
+      [ e, line ] = parseExpression(" 2 + 5 * x + smile")
       e.toString().should.equal("((2 + (5 * X)) + smile)")
-      html.should.eql(" {number:2} {operator:+} {number:5} {operator:*} {register:x} {operator:+} {identifier:smile}")
+      line.toDebug().should.eql(" {number:2} {operator:+} {number:5} {operator:*} {register:x} {operator:+} {identifier:smile}")
 
     it "parses hex and binary constants", ->
-      e = parseExpression("0x100 * -0b0010")
+      [ e, line ] = parseExpression("0x100 * -0b0010")
       e.toString().should.equal("(256 * (-2))")
-      html.should.eql("{number:0x100} {operator:*} {operator:-}{number:0b0010}")
+      line.toDebug().should.eql("{number:0x100} {operator:*} {operator:-}{number:0b0010}")
 
     it "understands shifting and precedence", ->
-      e = parseExpression("8 + 9 << 3 + 4")
+      [ e, line ] = parseExpression("8 + 9 << 3 + 4")
       e.toString().should.equal("((8 + 9) << (3 + 4))")
-      html.should.eql("{number:8} {operator:+} {number:9} {operator:&lt;&lt;} {number:3} {operator:+} {number:4}")
+      line.toDebug().should.eql("{number:8} {operator:+} {number:9} {operator:<<} {number:3} {operator:+} {number:4}")
 
     it "parses character literals", ->
-      e = parseExpression("'p' - '\\x40'")
+      [ e, line ] = parseExpression("'p' - '\\x40'")
       e.toString().should.equal("(112 - 64)")
-      html.should.eql("{string:&#39;p&#39;} {operator:-} {string:&#39;}{string-escape:\\x40}{string:&#39;}")
+      line.toDebug().should.eql("{string:'p'} {operator:-} {string:'}{string-escape:\\x40}{string:'}")
 
     it "parses unix-style registers", ->
-      e = parseExpression("(0x2300 + %j)")
+      [ e, line ] = parseExpression("(0x2300 + %j)")
       e.toString().should.equal("(8960 + J)")
-      html.should.eql("{operator:(}{number:0x2300} {operator:+} {register:%j}{operator:)}")
+      line.toDebug().should.eql("{operator:(}{number:0x2300} {operator:+} {register:%j}{operator:)}")
 
     it "evaluates simple expressions", ->
-      e = parseExpression("9")
+      [ e, line ] = parseExpression("9")
       e.evaluate().should.equal(9)
-      html.should.eql("{number:9}")
+      line.toDebug().should.eql("{number:9}")
 
     it "evaluates labels", ->
-      e = parseExpression("2 + hello * 3")
+      [ e, line ] = parseExpression("2 + hello * 3")
       e.evaluate(hello: 10).should.equal(32)
-      html.should.eql("{number:2} {operator:+} {identifier:hello} {operator:*} {number:3}")
+      line.toDebug().should.eql("{number:2} {operator:+} {identifier:hello} {operator:*} {number:3}")
 
     it "evaluates complex expressions", ->
-      e = parseExpression("((offset & 0b1111) << 4) * -ghost")
+      [ e, line ] = parseExpression("((offset & 0b1111) << 4) * -ghost")
       e.evaluate(ghost: 2, offset: 255).should.equal(-480)
-      html.should.eql("{operator:((}{identifier:offset} {operator:&amp;} {number:0b1111}{operator:)} " +
-        "{operator:&lt;&lt;} {number:4}{operator:)} {operator:*} {operator:-}{identifier:ghost}")
+      line.toDebug().should.eql("{operator:((}{identifier:offset} {operator:&} {number:0b1111}{operator:)} " +
+        "{operator:<<} {number:4}{operator:)} {operator:*} {operator:-}{identifier:ghost}")
 
     it "throws an exception for unknown labels", ->
-      e = parseExpression("cats + dogs")
+      [ e, line ] = parseExpression("cats + dogs")
       (-> e.evaluate(cats: 5)).should.throw(/resolve/)
       e.resolvable().should.equal(false)
       e.resolvable(cats: 5).should.equal(false)
       e.resolvable(cats: 5, dogs: 10).should.equal(true)
-      html.should.eql("{identifier:cats} {operator:+} {identifier:dogs}")
+      line.toDebug().should.eql("{identifier:cats} {operator:+} {identifier:dogs}")
 
     it "evaluates <, <=, >, >=", ->
-      e = parseExpression("errors > 9")
+      [ e, line ] = parseExpression("errors > 9")
       e.evaluate(errors: 10).should.equal(1)
       e.evaluate(errors: 3).should.equal(0)
-      e = parseExpression("errors < 9")
+      [ e, line ] = parseExpression("errors < 9")
       e.evaluate(errors: 10).should.equal(0)
       e.evaluate(errors: 3).should.equal(1)
-      e = parseExpression("errors >= 9")
+      [ e, line ] = parseExpression("errors >= 9")
       e.evaluate(errors: 10).should.equal(1)
       e.evaluate(errors: 9).should.equal(1)
       e.evaluate(errors: 3).should.equal(0)
-      e = parseExpression("errors <= 9")
+      [ e, line ] = parseExpression("errors <= 9")
       e.evaluate(errors: 10).should.equal(0)
       e.evaluate(errors: 9).should.equal(1)
       e.evaluate(errors: 3).should.equal(1)
 
     it "evaluates ==, !=", ->
-      e = parseExpression("errors | 1 == 9")
+      [ e, line ] = parseExpression("errors | 1 == 9")
       e.evaluate(errors: 8).should.equal(1)
       e.evaluate(errors: 6).should.equal(0)
-      e = parseExpression("errors | 1 != 9")
+      [ e, line ] = parseExpression("errors | 1 != 9")
       e.evaluate(errors: 8).should.equal(0)
       e.evaluate(errors: 6).should.equal(1)
 
@@ -189,8 +185,13 @@ describe "Parser", ->
     it "parses trailing comments", ->
       [ pline, html ] = parseLine("SUB A, [0x1000]            ; 7803 1000")
       pline.toString().should.eql("SUB <0>, <30, 4096>")
-      html.should.eql("{instruction:SUB} {register:A}{operator:,} {operator:[}{number:0x1000}{operator:]}            " +
+      pline.toDebug().should.eql("{instruction:SUB} {register:A}{operator:,} {operator:[}{number:0x1000}{operator:]}            " +
         "{comment:; 7803 1000}")
+
+    it "parses trailing comments in dat lines", ->
+      [ pline, _ ] = parseLine(":old_ia dat 0       ; chained interrupt handler")
+      pline.toString().should.eql(":old_ia ")
+      pline.toDebug().should.eql("{label::old_ia} {instruction:dat} {number:0}       {comment:; chained interrupt handler}")
 
     it "parses a single op", ->
       [ pline, html ] = parseLine("  hwi 0")
@@ -208,7 +209,7 @@ describe "Parser", ->
     it "parses a line with operands", ->
       [ pline, html ] = parseLine(":last set [a], ','")
       pline.toString().should.eql(":last SET <8>, <31, 44>")
-      html.should.eql("{label::last} {instruction:set} {operator:[}{register:a}{operator:],} {string:&#39;,&#39;}")
+      html.should.eql("{label::last} {instruction:set} {operator:[}{register:a}{operator:],} {string:','}")
 
     it "parses pick", ->
       [ pline, html ] = parseLine("set a, PICK 3")
@@ -244,7 +245,7 @@ describe "Parser", ->
       pline.toString().should.eql("")
       pline.data.map((x) => x.evaluate()).should.eql([ 3, 9, 0x40, 0x63, 0x61, 0x74, 0x6361, 0x7400 ])
       html.should.eql("{instruction:dat} {number:3}{operator:,} {number:9}{operator:,} " +
-        "{string:&#39;@&#39;}{operator:,} {string:&quot;cat&quot;}{operator:,} {string:p&quot;cat&quot;}")
+        "{string:'@'}{operator:,} {string:\"cat\"}{operator:,} {string:p\"cat\"}")
 
     it "parses data with unresolved expression", ->
       [ pline, html ] = parseLine("dat 3, 9, cat + 1")
@@ -261,7 +262,7 @@ describe "Parser", ->
       [ pline, html ] = parseLine("dat r\"cat\"")
       pline.toString().should.eql("")
       pline.data.map((x) => x.evaluate()).should.eql([ 0x6361, 0xf400 ])
-      html.should.eql("{instruction:dat} {string:r&quot;cat&quot;}")
+      html.should.eql("{instruction:dat} {string:r\"cat\"}")
 
     it "parses org changes", ->
       [ pline, html ] = parseLine(".org 0x1000")

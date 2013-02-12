@@ -108,6 +108,7 @@ class Line
     regex.exec(@text[@pos...])?
 
   skipWhitespace: ->
+    return if @pos >= @end
     c = @text[@pos]
     while @pos < @end and (c == " " or c == "\t" or c == "\r" or c == "\n")
       c = @text[++@pos]
