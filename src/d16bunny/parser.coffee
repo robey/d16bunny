@@ -218,13 +218,13 @@ class Parser
       return pline
 
     if line.scan(":", Span.Label)
-      pline.label = line.parseWord("Label", Span.Label)
+      pline.label = line.parseLabel("Label")
       pline.label = @fixLabel(pline.label, true)
       line.skipWhitespace()
     return pline if line.finished()
 
     pline.opPos = line.mark()
-    pline.op = line.parseWord("Operation name", Span.Instruction)
+    pline.op = line.parseInstruction("Operation name")
 
     if pline.op == "equ"
       # allow ":label equ <val>" for windows people
@@ -262,7 +262,7 @@ class Parser
       # special case "name = value"
       line.rewind(pline.opPos)
       delete pline.op
-      name = line.parseWord("Constant name", Span.Identifier)
+      name = line.parseIdentifier("Constant name")
       line.skipWhitespace()
       line.scanAssert("=", Span.Operator)
       line.skipWhitespace()
@@ -445,7 +445,7 @@ class Parser
   # a directive starts with "#" or "."
   parseDirective: (line, pline) ->
     m = line.mark()
-    pline.directive = line.parseWord("Directive", Span.Directive)
+    pline.directive = line.parseDirective("Directive")
     line.skipWhitespace()
     if pline.directive in [ "if", "else", "endif" ]
       if @inMacro then return false
@@ -468,7 +468,7 @@ class Parser
 
   parseDefineDirective: (line, pline) ->
     delete pline.directive
-    name = line.parseWord("Definition name")
+    name = line.parseIdentifier("Definition name")
     line.skipWhitespace()
     @constants[name] = @parseExpression(line)
     @constants[name].lineNumber = pline.lineNumber
@@ -483,7 +483,7 @@ class Parser
 
   parseMacroDirective: (line, pline) ->
     m = line.mark()
-    pline.name = line.parseWord("Macro name")
+    pline.name = line.parseIdentifier("Macro name")
     line.skipWhitespace()
     parameters = @parseMacroParameters(line)
     line.skipWhitespace()
@@ -504,7 +504,7 @@ class Parser
     line.skipWhitespace()
     while not line.finished()
       if line.scan(")", Span.Directive) then return args
-      args.push(line.parseWord("Argument name"))
+      args.push(line.parseIdentifier("Argument name"))
       line.skipWhitespace()
       if line.scan(",", Span.Directive) then line.skipWhitespace()
     line.fail "Expected )"
@@ -512,7 +512,7 @@ class Parser
   # expand a macro call, recursively parsing the nested lines
   parseMacroCall: (line, pline) ->
     m = line.mark()
-    name = line.parseWord("Macro name", Span.Instruction)
+    name = line.parseMacroName("Macro name")
     line.skipWhitespace()
     if line.scan("(", Span.Operator) then line.skipWhitespace()
     [ args, argIndexes ] = @parseMacroArgs(line)

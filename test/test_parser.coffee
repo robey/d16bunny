@@ -240,6 +240,12 @@ describe "Parser", ->
       pline.toString().should.eql("")
       html.should.eql("{label::happy} {directive:equ} {number:23}")
 
+    it "parses a definition with preserved case", ->
+      [ pline, html, constants ] = parseLine("#define HappY 23")
+      constants["HappY"].evaluate().should.eql(23)
+      pline.toString().should.eql("")
+      html.should.eql("{directive:#define} {identifier:HappY} \{number:23}")
+
     it "parses data", ->
       [ pline, html ] = parseLine("dat 3, 9, '@', \"cat\", p\"cat\"")
       pline.toString().should.eql("")

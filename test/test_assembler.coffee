@@ -37,6 +37,10 @@ describe "Assembler.compileLine", ->
     [ dline, symtab ] = compileLine("jsr cout", 0x200, cout: 0x999)
     dline.toString().should.eql("0x0200: 0x7c20, 0x0999")
 
+  it "preserves case on constants", ->
+    [ dline, symtab ] = compileLine("set x, BS", 0x200, BS: 8)
+    dline.toString().should.eql("0x0200: 0x7c61, 0x0008")
+
   describe "builtin macros", ->
     it "compiles jmp", ->
       [ dline, symtab ] = compileLine("jmp cout", 0x200, cout: 0x999)

@@ -151,10 +151,19 @@ class Line
   parseWord: (name, type = Span.Identifier) ->
     word = @match(Line.SymbolRegex, type)
     if not word? then @fail "#{name} must contain only letters, digits, _ or ."
-    word = word.toLowerCase()
     if Dcpu.Reserved[word] or Dcpu.ReservedOp[word] then @fail "Reserved keyword: #{word}"
     word
 
+  parseIdentifier: (name) -> @parseWord(name, Span.Identifier)
+
+  parseLabel: (name) -> @parseWord(name, Span.Label)
+
+  parseInstruction: (name) -> @parseWord(name, Span.Instruction).toLowerCase()
+
+  parseDirective: (name) -> @parseWord(name, Span.Directive).toLowerCase()
+
+  parseMacroName: (name) -> @parseWord(name, Span.Instruction)
+        
   # just want all the literal text up to the next comma, closing paren, or
   # comment. but also allow quoting strings and chars.
   parseMacroArg: ->

@@ -127,6 +127,7 @@ inside character and string data, the following escapes are supported:
     \r    return (0x000d)
     \t    tab (0x0009)
     \z    null (0x0000)
+    \e    escape (0x001b)
     \xNN  any single half-word (0x0000 - 0x00ff)
 
 to-do
@@ -134,6 +135,7 @@ to-do
 
 - #include "filename"
 - allow "label:"
+- "#align"
 
 
 thanks
