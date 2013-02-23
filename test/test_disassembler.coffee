@@ -61,7 +61,6 @@ describe "Disassembler", ->
     dis1(0x7461).toString().should.eql("SET X, EX")
 
   it "gives up for DAT", ->
-    dis1(0).toString().should.eql("DAT 0")
     dis1(0xfffd).toString().should.eql("DAT 0xfffd")
 
   describe "finds targets", ->
@@ -109,6 +108,7 @@ describe "Disassembler", ->
   it "processes a loop", ->
     x = disat(0x200, 0x8862, 0xd476, 0x9383, 0x6381)
     x.should.eql([
+      ""
       ".ORG 0x200"
       ":t1"
       "  ADD X, 1"
@@ -130,9 +130,37 @@ describe "Disassembler", ->
   it "processes jumps", ->
     x = disat(0x2000, 0x7f81, 0x2002, 0x7f81, 0x2000)
     x.should.eql([
+      ""
       ".ORG 0x2000"
       ":t1"
       "  SET PC, t2"
       ":t2"
       "  SET PC, t1"
     ])
+
+  it "processes gaps", ->
+    x = disat(0x333, 0xa821, 0xa821, 0, 0, 0xa821, 0)
+    x.should.eql([
+      ""
+      ".ORG 0x333"
+      "  SET B, 9"
+      "  SET B, 9"
+      ""
+      ".ORG 0x337"
+      "  SET B, 9"
+    ])
+
+  it "can handle jumping into the middle of an instruction", ->
+    x = disat(0x3d, 0x3aa9, 0x301, 0x701, 0xb01, 0x413, 0x7c20, 0x3e)
+    x.should.eql([
+      ".DEFINE t1 0x3e"
+      ""
+      ".ORG 0x3d"
+      "  MDI [Z + 0x301], [I]"
+      "  SET PUSH, B"
+      "  SET PUSH, C"
+      "  IFN A, B"
+      "    JSR t1"
+    ])
+
+
