@@ -16,5 +16,8 @@ assembler = require './d16bunny/assembler'
 exports.DataLine = assembler.DataLine
 exports.Assembler = assembler.Assembler
 
+disassembler = require './d16bunny/disassembler'
+exports.Disassembler = disassembler.Disassembler
+
 prettyprint = require "./d16bunny/prettyprint"
 exports.pp = prettyprint.pp

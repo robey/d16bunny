@@ -58,4 +58,9 @@ Dcpu.RegisterRegex = new RegExp("^(" + Dcpu.Reserved.join("|") + ")\\b", "i")
 Dcpu.ReservedOp = (x for x of Dcpu.BinaryOp).concat(x for x of Dcpu.SpecialOp).concat(
   [ "jmp", "hlt", "ret", "bra", "dat", "org", "equ" ])
 
+Dcpu.BinaryOpNames = {}
+for k, v of Dcpu.BinaryOp then Dcpu.BinaryOpNames[v] = k
+Dcpu.SpecialOpNames = {}
+for k, v of Dcpu.SpecialOp then Dcpu.SpecialOpNames[v] = k
+
 exports.Dcpu = Dcpu

@@ -38,6 +38,7 @@ assemblerFiles = [
   "assembler",
   "builtins",
   "dcpu",
+  "disassembler",
   "errors",
   "expression",
   "line",

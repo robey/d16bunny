@@ -2,7 +2,7 @@
 Dcpu = require("./dcpu").Dcpu
 Expression = require('./expression').Expression
 Parser = require('./parser').Parser
-Operand = require('./parser').Operand
+Operand = require('./operand').Operand
 Macro = require('./parser').Macro
 AssemblerError = require('./errors').AssemblerError
 AssemblerOutput = require('./output').AssemblerOutput
