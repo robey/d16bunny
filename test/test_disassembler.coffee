@@ -63,6 +63,9 @@ describe "Disassembler", ->
   it "gives up for DAT", ->
     dis1(0xfffd).toString().should.eql("DAT 0xfffd")
 
+  it "decodes two immediate arguments", ->
+    dis1(0x7fc1, 0xff05, 0x3344).toString().should.eql("SET [0x3344], 0xff05")
+
   describe "finds targets", ->
     it "in JSR", ->
       x = dis1(0x7c20, 0xfded)

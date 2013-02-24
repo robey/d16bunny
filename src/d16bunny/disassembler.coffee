@@ -111,12 +111,14 @@ class Disassembler
       opcode = b
       b = null
       opname = Dcpu.SpecialOpNames[opcode]
+      if opname? then aArgument = if @hasImmediate[a] then @nextWord() else null
     else
       # binary
       opname = Dcpu.BinaryOpNames[opcode]
-      if opname? then bArgument = if @hasImmediate[b] then @nextWord() else null
+      if opname?
+        aArgument = if @hasImmediate[a] then @nextWord() else null
+        bArgument = if @hasImmediate[b] then @nextWord() else null
     if opname?
-      aArgument = if @hasImmediate[a] then @nextWord() else null
       # go ahead and decode embedded immediates
       if a >= 0x20
         aArgument = (a - 0x21) & 0xffff
