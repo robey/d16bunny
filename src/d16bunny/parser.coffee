@@ -463,7 +463,7 @@ class Parser
       when "onerror" then @parseOnErrorDirective(line, pline)
       else
         line.pointTo(m)
-        line.fail "Unknown directive: #{directive}"
+        line.fail "Unknown directive: #{pline.directive}"
     true
 
   parseDefineDirective: (line, pline) ->
