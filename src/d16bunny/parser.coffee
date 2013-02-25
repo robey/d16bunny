@@ -204,13 +204,7 @@ class Parser
     if @ignoring then return pline
 
     if line.scan("}", Span.Directive)
-      if not @inMacro
-        line.fail "Unexpected end of macro"
-        return pline
-      @debug "  finished defining macro ", @inMacro
-      @inMacro = false
-      line.skipWhitespace()
-      if not line.finished() then line.fail "Unexpected content after end of macro"
+      @parseMacroEnd(line)
       return pline
 
     if @inMacro
@@ -458,6 +452,7 @@ class Parser
     if @ignoring then return
     switch pline.directive
       when "macro" then @parseMacroDirective(line, pline)
+      when "endmacro" then @parseMacroEnd(line)
       when "define", "equ" then @parseDefineDirective(line, pline)
       when "org" then @parseOrgDirective(line, pline)
       when "onerror" then @parseOnErrorDirective(line, pline)
@@ -487,7 +482,7 @@ class Parser
     line.skipWhitespace()
     parameters = @parseMacroParameters(line)
     line.skipWhitespace()
-    line.scanAssert("{", Span.Directive)
+    line.scan("{", Span.Directive)
     fullname = "#{pline.name}(#{parameters.length})"
     if @macros[fullname]?
       line.pointTo(m)
@@ -508,6 +503,15 @@ class Parser
       line.skipWhitespace()
       if line.scan(",", Span.Directive) then line.skipWhitespace()
     line.fail "Expected )"
+
+  parseMacroEnd: (line) ->
+    if not @inMacro
+      line.fail "Unexpected end of macro"
+      return pline
+    @debug "  finished defining macro ", @inMacro
+    @inMacro = false
+    line.skipWhitespace()
+    if not line.finished() then line.fail "Unexpected content after end of macro"
 
   # expand a macro call, recursively parsing the nested lines
   parseMacroCall: (line, pline) ->

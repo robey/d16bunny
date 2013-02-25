@@ -4,31 +4,46 @@ d16bunny = require '../src/d16bunny'
 pp = d16bunny.pp
 
 describe "Parser macros", ->
-  it "parses a macro definition", ->
-    parser = new d16bunny.Parser()
-    pline = parser.parseLine("#macro swap(left, right) {")
-    pline.toString().should.eql(".macro swap")
-    pline.toDebug().should.eql("{directive:#macro} {identifier:swap}{directive:(}{identifier:left}{directive:,} " +
-      "{identifier:right}{directive:)} {directive:{}")
-    # check that it's there
-    parser.macros["swap"].should.eql([ 2 ])
-    parser.macros["swap(2)"].name.should.eql("swap")
-    parser.macros["swap(2)"].fullname.should.eql("swap(2)")
-    parser.macros["swap(2)"].parameters.should.eql([ "left", "right" ])
-    # add lines
-    line1 = parser.parseLine("  set push, left")
-    line1.toString().should.eql("")
-    line2 = parser.parseLine("  set left, right")
-    line2.toString().should.eql("")
-    line3 = parser.parseLine("  set right, pop")
-    line3.toString().should.eql("")
-    line4 = parser.parseLine("}")
-    line4.toString().should.eql("")
-    parser.macros["swap(2)"].textLines.should.eql([
-      "  set push, left",
-      "  set left, right",
-      "  set right, pop"
-    ])
+  describe "parses a macro definition", ->
+    it "in notch syntax", ->
+      parser = new d16bunny.Parser()
+      pline = parser.parseLine("#macro swap(left, right) {")
+      pline.toString().should.eql(".macro swap")
+      pline.toDebug().should.eql("{directive:#macro} {identifier:swap}{directive:(}{identifier:left}{directive:,} " +
+        "{identifier:right}{directive:)} {directive:{}")
+      # check that it's there
+      parser.macros["swap"].should.eql([ 2 ])
+      parser.macros["swap(2)"].name.should.eql("swap")
+      parser.macros["swap(2)"].fullname.should.eql("swap(2)")
+      parser.macros["swap(2)"].parameters.should.eql([ "left", "right" ])
+      # add lines
+      line1 = parser.parseLine("  set push, left")
+      line1.toString().should.eql("")
+      line2 = parser.parseLine("  set left, right")
+      line2.toString().should.eql("")
+      line3 = parser.parseLine("  set right, pop")
+      line3.toString().should.eql("")
+      line4 = parser.parseLine("}")
+      line4.toString().should.eql("")
+      parser.macros["swap(2)"].textLines.should.eql([
+        "  set push, left",
+        "  set left, right",
+        "  set right, pop"
+      ])
+
+    it "in standard syntax", ->
+      parser = new d16bunny.Parser()
+      line1 = parser.parseLine(".macro inject(data)")
+      line1.toDebug().should.eql("{directive:.macro} {identifier:inject}{directive:(}{identifier:data}{directive:)}")
+      line2 = parser.parseLine("  dat data, 0")
+      line2.toDebug().should.eql("  dat data, 0")
+      line2 = parser.parseLine(".endmacro")
+      line2.toDebug().should.eql("{directive:.endmacro}")
+      parser.macros["inject"].should.eql([ 1 ])
+      parser.macros["inject(1)"].name.should.eql("inject")
+      parser.macros["inject(1)"].fullname.should.eql("inject(1)")
+      parser.macros["inject(1)"].parameters.should.eql([ "data" ])
+      parser.macros["inject(1)"].textLines.should.eql([ "  dat data, 0" ])
 
   it "parses a macro call", ->
     parser = new d16bunny.Parser()
