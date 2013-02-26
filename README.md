@@ -136,6 +136,9 @@ to-do
 - #include "filename"
 - allow "label:"
 - "#align"
+- "#fill"?
+- "#endmacro"
+- define "d16bunny" so people can test for it
 
 
 thanks

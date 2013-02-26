@@ -26,9 +26,9 @@ describe "Parser macros", ->
       line4 = parser.parseLine("}")
       line4.toString().should.eql("")
       parser.macros["swap(2)"].textLines.should.eql([
-        "  set push, left",
-        "  set left, right",
-        "  set right, pop"
+        [ "", 0, "  set push, left" ]
+        [ "", 0, "  set left, right" ]
+        [ "", 0, "  set right, pop" ]
       ])
 
     it "in standard syntax", ->
@@ -43,7 +43,7 @@ describe "Parser macros", ->
       parser.macros["inject(1)"].name.should.eql("inject")
       parser.macros["inject(1)"].fullname.should.eql("inject(1)")
       parser.macros["inject(1)"].parameters.should.eql([ "data" ])
-      parser.macros["inject(1)"].textLines.should.eql([ "  dat data, 0" ])
+      parser.macros["inject(1)"].textLines.should.eql([ [ "", 0, "  dat data, 0" ] ])
 
   it "parses a macro call", ->
     parser = new d16bunny.Parser()

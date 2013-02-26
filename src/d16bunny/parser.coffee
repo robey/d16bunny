@@ -74,7 +74,7 @@ class Macro
 
   invoke: (parser, pline, args) ->
     parser.debug "  macro expansion of ", @fullname, ":"
-    newTextLines = for text in @textLines
+    newTextLines = for [ filename, lineNumber, text ] in @textLines
       # textual substitution, no fancy stuff.
       argOffsets = []
       for i in [0 ... args.length]
@@ -82,7 +82,7 @@ class Macro
           argOffsets.push(left: offset, right: offset + args[i].length, arg: i)
           args[i]
       parser.debug "  -- ", text
-      [ text, argOffsets ]
+      [ filename, lineNumber, text, argOffsets ]
     parser.debug "  --."
 
     # prefix relative labels with a unique tag
@@ -90,9 +90,9 @@ class Macro
 
     plines = []
     try
-      for [ text, argOffsets ] in newTextLines
+      for [ filename, lineNumber, text, argOffsets ] in newTextLines
         try
-          pline = parser.parseLine(text)
+          pline = parser.parseLine(text, filename, lineNumber)
         catch e
           if e.type != "AssemblerError" then throw e
           parser.debug "  error in macro invocation: pos=", e.pos, " args=", argOffsets, " reason=", e.reason
@@ -100,8 +100,9 @@ class Macro
           for argOffset in argOffsets
             if e.pos >= argOffset.left and e.pos <= argOffset.right
               throw new AssemblerError(pline.line.text, pline.macroArgIndexes[argOffset.arg], e.reason)
-          # hm. just point to the main arg then?
-          throw new AssemblerError(pline.line.text, (if args.length > 0 then pline.macroArgIndexes[0] else 0), e.reason)
+          # hm. well, if we changed the error message, point to the caller.
+          if @onError?
+            throw new AssemblerError(pline.line.text, (if args.length > 0 then pline.macroArgIndexes[0] else 0), e.reason)
         pline.macroArgOffsets = argOffsets
         if pline.directive? then pline.line.fail "Macros can't have directives in them"
         if pline.expanded?
@@ -189,10 +190,11 @@ class Parser
     [ @lastLabel, @labelPrefix ] = @labelStack.pop()
 
   # returns a Line object, with syntax parsed out
-  parseLine: (text, lineNumber=0, options={}) ->
+  parseLine: (text, filename="", lineNumber=0, options={}) ->
     @debug "+ parse: ", lineNumber, ": ", text
     line = new Line(text, options)
     pline = new ParsedLine(line, options)
+    pline.filename = filename
     pline.lineNumber = lineNumber
     line.skipWhitespace()
     if line.finished() then return pline
@@ -208,7 +210,7 @@ class Parser
       return pline
 
     if @inMacro
-      @macros[@inMacro].textLines.push(text)
+      @macros[@inMacro].textLines.push([ filename, lineNumber, text ])
       return pline
 
     if line.scan(":", Span.Label)
@@ -234,6 +236,7 @@ class Parser
       delete pline.label
       delete pline.op
       @constants[name] = expr
+      @constants[name].filename = pline.filename
       @constants[name].lineNumber = pline.lineNumber
       line.skipWhitespace()
       if not line.finished() then line.fail "Unexpected content after definition"
@@ -261,6 +264,7 @@ class Parser
       line.scanAssert("=", Span.Operator)
       line.skipWhitespace()
       @constants[name] = @parseExpression(line)
+      @constants[name].filename = pline.filename
       @constants[name].lineNumber = pline.lineNumber
       line.skipWhitespace()
       if not line.finished() then line.fail "Unexpected content after definition"
@@ -456,6 +460,7 @@ class Parser
       when "define", "equ" then @parseDefineDirective(line, pline)
       when "org" then @parseOrgDirective(line, pline)
       when "onerror" then @parseOnErrorDirective(line, pline)
+      when "include" then @parseIncludeDirective(line, pline)
       else
         line.pointTo(m)
         line.fail "Unknown directive: #{pline.directive}"
@@ -466,6 +471,7 @@ class Parser
     name = line.parseIdentifier("Definition name")
     line.skipWhitespace()
     @constants[name] = @parseExpression(line)
+    @constants[name].filename = pline.filename
     @constants[name].lineNumber = pline.lineNumber
     line.skipWhitespace()
     if not line.finished() then @fail "Unexpected content after definition"
@@ -579,6 +585,11 @@ class Parser
     line.skipWhitespace()
     @macros[@inMacro].onError = line.parseString()
     if not line.finished() then line.fail "Unexpected content after .onerror"
+
+  parseIncludeDirective: (line, pline) ->
+    line.skipWhitespace()
+    pline.name = line.parseString()
+    if not line.finished() then line.fail "Unexpected content after INCLUDE"
 
 
 exports.Line = Line

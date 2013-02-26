@@ -281,20 +281,27 @@ describe "Parser", ->
       html.should.eql("  {directive:org} {number:3}")
 
     it "disallows an unknown opcode", ->
-      (-> parseLine("qxq 9", 0x200)).should.throw(/qxq/)
+      (-> parseLine("qxq 9")).should.throw(/qxq/)
 
     it "requires binary operations to have 2 arguments", ->
-      (-> parseLine("add x", 0x200)).should.throw(/requires 2 arguments/)
-      (-> parseLine("add x, y, z", 0x200)).should.throw(/requires 2 arguments/)
+      (-> parseLine("add x")).should.throw(/requires 2 arguments/)
+      (-> parseLine("add x, y, z")).should.throw(/requires 2 arguments/)
 
     it "requires special operations to have 1 argument", ->
-      (-> parseLine("jsr", 0x200)).should.throw(/requires 1 argument/)
-      (-> parseLine("jsr x, y", 0x200)).should.throw(/requires 1 argument/)
+      (-> parseLine("jsr")).should.throw(/requires 1 argument/)
+      (-> parseLine("jsr x, y")).should.throw(/requires 1 argument/)
 
     it "can ignore errors for syntax highlighting", ->
       parser = new d16bunny.Parser()
-      pline = parser.parseLine("sum(3, 4)", 0, ignoreErrors: true)
+      pline = parser.parseLine("sum(3, 4)", "", 0, ignoreErrors: true)
       pline.line.toDebug().should.eql("{instruction:sum}{operator:(}{string:3}{operator:,} {string:4}{operator:)}")
+
+    it "parses an include", ->
+      parser = new d16bunny.Parser()
+      pline = parser.parseLine(".include \"frosty.dasm\"")
+      pline.line.toDebug().should.eql("{directive:.include} {string:\"frosty.dasm\"}")
+      pline.directive.should.eql("include")
+      pline.name.should.eql("frosty.dasm")
 
   describe "parseLine if", ->
     it "parses a simple if block", ->

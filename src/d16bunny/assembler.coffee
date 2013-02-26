@@ -89,7 +89,7 @@ class Assembler
   # logger will be used to report errors: logger(line#, pos, message)
   # line # (y) and pos (x) are counted from zero.
   constructor: (@logger, @maxErrors = 10) ->
-    if not @logger? then @logger = (lineNumber, pos, reason) ->
+    if not @logger? then @logger = (filename, lineNumber, pos, reason) ->
     @reset()
 
   reset: ->
@@ -111,19 +111,19 @@ class Assembler
   fail: (x, message) ->
     throw new AssemblerError(@text, x, message)
 
-  error: (lineNumber, pos, reason) ->
+  error: (filename, lineNumber, pos, reason) ->
     # because we do multiple resolve-phase passes, we might log the same error twice.
-    for x in @errors then if x[0] == lineNumber and x[1] == pos and x[2] == reason then return
+    for x in @errors then if x[0] == filename and x[1] == lineNumber and x[2] == pos and x[3] == reason then return
     @debug "  error on line #{lineNumber} at #{pos}: #{reason}"
-    @logger(lineNumber, pos, reason)
-    @errors.push([ lineNumber, pos, reason ])
+    @logger(filename, lineNumber, pos, reason)
+    @errors.push([ filename, lineNumber, pos, reason ])
 
   giveUp: ->
     @errors.length >= @maxErrors
 
   # internal: call a function, catching and reporting assembler errors.
   # returns null on error (or if there have been too many errors already).
-  process: (lineNumber, f, transformer) ->
+  process: (filename, lineNumber, f, transformer) ->
     if @giveUp() then return null
     try
       f()
@@ -131,13 +131,13 @@ class Assembler
       if e.type != "AssemblerError" then throw e
       pos = if e.pos? then e.pos else 0
       reason = if e.reason? then e.reason else e.toString()
-      if transformer? then [ lineNumber, pos, reason ] = transformer(lineNumber, pos, reason)
-      @error(lineNumber, pos, reason)
-      if @giveUp() then @error(lineNumber, pos, "Too many errors; giving up.")
+      if transformer? then [ filename, lineNumber, pos, reason ] = transformer(filename, lineNumber, pos, reason)
+      @error(filename, lineNumber, pos, reason)
+      if @giveUp() then @error(filename, lineNumber, pos, "Too many errors; giving up.")
       null
     
-  compile: (textLines, address = 0) ->
-    plines = @parse(textLines)
+  compile: (textLines, address=0, filename="") ->
+    plines = @parse(textLines, filename)
     if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
 
     # repeat the compile/resolve cycle until we stop modifying the parsed
@@ -152,7 +152,7 @@ class Assembler
       dlines = plines.map (pline) =>
         if pline?
           # FIXME i don't think compileLine can throw an exception anymore.
-          dline = @process pline.lineNumber, => @compileLine(pline, address)
+          dline = @process filename, pline.lineNumber, => @compileLine(pline, address)
           @debug "  data: ", dline
           if dline? then address = dline.nextAddress()
           dline
@@ -170,14 +170,22 @@ class Assembler
 
   # ----- parse phase
 
-  parse: (textLines) ->
+  parse: (textLines, filename) ->
     parser = new Parser()
     parser.debugger = @debugger
     @addBuiltinMacros(parser)
     plines = []
     for text, i in textLines
-      pline = @process i, => parser.parseLine(text, i)
+      pline = @process filename, i, => parser.parseLine(text, filename, i)
       return [] if @giveUp()
+      continue unless pline?
+      if pline.directive == "include"
+        if not @includer?
+          @error(filename, i, 0, "No mechanism to include files.")
+        else
+          newlines = @process filename, i, => @includer(pline.name)
+          return [] if @giveUp()
+          # fixme
       plines.push(pline)
     @addConstants(parser.constants)
     # resolve any expressions that can be taken care of by the constants
@@ -198,11 +206,11 @@ class Assembler
           progress = true
       if not progress
         for k, v of unresolved
-          @process v.lineNumber, => v.evaluate(@constants) & 0xffff
+          @process v.filename, v.lineNumber, => v.evaluate(@constants) & 0xffff
 
   addBuiltinMacros: (parser) ->
     for text, lineNumber in BuiltinMacros.split("\n")
-      parser.parseLine(text, -1)
+      parser.parseLine(text, "(builtins)", lineNumber)
 
   # ----- compile phase
 
@@ -247,7 +255,7 @@ class Assembler
     @symtab["$"] = dline.address
     dline.data = dline.data.map (item) =>
       if item instanceof Expression
-        value = @process dline.pline.lineNumber, (=> item.evaluate(@symtab) & 0xffff), transformer
+        value = @process dline.pline.filename, dline.pline.lineNumber, (=> item.evaluate(@symtab) & 0xffff), transformer
         # we reported the error, so just save it as zero so we can try to continue.
         if value? then value else 0
       else
@@ -266,11 +274,12 @@ class Assembler
         @recompile = true
     if dline.expanded?
       for dl in dline.expanded
-        transformer = (y, x, reason) =>
+        transformer = (filename, y, x, reason) =>
           for argOffset in dl.pline.macroArgOffsets then if x >= argOffset.left and x <= argOffset.right
+            filename = dline.pline.filename
             y = dline.pline.lineNumber
             x = dline.pline.macroArgIndexes[argOffset.arg]
-          [ y, x, reason ]
+          [ filename, y, x, reason ]
         @resolveLine(dl, transformer)
 
   fillInstruction: (dline, force=false) ->

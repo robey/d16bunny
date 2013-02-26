@@ -81,9 +81,9 @@ describe "Assembler.compileLine", ->
     m = new d16bunny.Macro("swap", "swap(2)", [ "r1", "r2" ])
     parser.macros["swap(2)"] = m
     for x in [
-      "set push, r1"
-      "set r1, r2"
-      "set r2, pop"
+      [ "", 0, "set push, r1" ]
+      [ "", 0, "set r1, r2" ]
+      [ "", 0, "set r2, pop" ]
     ] then m.textLines.push(x)
     dline = a.compileLine(parser.parseLine("swap y, z"), 0x200)
     dline.flatten()
