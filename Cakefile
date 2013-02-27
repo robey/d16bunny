@@ -44,7 +44,7 @@ synctask "test", "run unit tests", ->
   run "#{mocha} -R Progress --compilers coffee:coffee-script --colors"
   console.log "Integration test for d16basm (from maximinus-thrax):"
   for i in [1..5]
-    run "./bin/d16basm -q --dat --out /tmp/d16.out testdata/test#{i}.dasm"
+    run "./bin/bunny -q --dat --out /tmp/d16.out testdata/test#{i}.dasm"
     checkfile "/tmp/d16.out", "testdata/test#{i}.d16dat"
     run "rm -f /tmp/d16.out"
   console.log "\u001b[32mOK! :)\u001b[0m"
