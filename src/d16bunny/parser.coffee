@@ -436,8 +436,6 @@ class Parser
       line.skipWhitespace()
       if line.scan(",", Span.Operator) then line.skipWhitespace()
 
-  # FIXME: test data line with unresolved expression
-
   # ----- directives
 
   # a directive starts with "#" or "."
@@ -461,6 +459,7 @@ class Parser
       when "org" then @parseOrgDirective(line, pline)
       when "onerror" then @parseOnErrorDirective(line, pline)
       when "include" then @parseIncludeDirective(line, pline)
+      when "fill" then @parseFillDirective(line, pline)
       else
         line.pointTo(m)
         line.fail "Unknown directive: #{pline.directive}"
@@ -590,6 +589,18 @@ class Parser
     line.skipWhitespace()
     pline.name = line.parseString()
     if not line.finished() then line.fail "Unexpected content after INCLUDE"
+
+  # weird one: #fill (count) (item)
+  parseFillDirective: (line, pline) ->
+    line.skipWhitespace()
+    pline.directive = null
+    pline.data = []
+    count = @parseExpression(line).evaluate()
+    line.scanAssert(",", Span.Operator)
+    line.skipWhitespace()
+    item = @parseExpression(line)
+    for i in [0 ... count] then pline.data.push(item)
+    if not line.finished() then line.fail "Unexpected content after FILL <count>, <expr>"
 
 
 exports.Line = Line

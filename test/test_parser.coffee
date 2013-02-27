@@ -264,6 +264,16 @@ describe "Parser", ->
       pline.toDebug().should.eql("{instruction:dat} {number:3}{operator:,} {number:9}{operator:,} " +
         "{identifier:cat} {operator:+} {number:1}")
 
+    it "parses fill", ->
+      [ pline, html ] = parseLine(".fill 6, 900")
+      pline.toString().should.eql("")
+      pline.data.map((x) => x.evaluate()).should.eql([ 900, 900, 900, 900, 900, 900 ])
+      html.should.eql("{directive:.fill} {number:6}{operator:,} {number:900}")
+      [ pline, html ] = parseLine(".fill 6, hello")
+      pline.toString().should.eql("")
+      pline.data.map((x) => x.evaluate(hello: 901)).should.eql([ 901, 901, 901, 901, 901, 901 ])
+      html.should.eql("{directive:.fill} {number:6}{operator:,} {identifier:hello}")
+
     it "parses rom strings", ->
       [ pline, html ] = parseLine("dat r\"cat\"")
       pline.toString().should.eql("")
