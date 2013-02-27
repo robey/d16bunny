@@ -64,6 +64,10 @@ class ParsedLine
         x.evaluate(symtab)
       else
         x
+    if @directive == "fill" and not (@data[0] instanceof Expression)
+      [ count, item ] = @data
+      @data = (for i in [0 ... count] then item)
+      @directive = null
 
 
 class Macro
@@ -410,6 +414,7 @@ class Parser
   # read a list of data objects, which could each be an expression or a string.
   parseData: (line, pline) ->
     delete pline.op
+    delete pline.directive
     pline.data = []
     line.skipWhitespace()
     while not line.finished()
@@ -459,6 +464,7 @@ class Parser
       when "org" then @parseOrgDirective(line, pline)
       when "onerror" then @parseOnErrorDirective(line, pline)
       when "include" then @parseIncludeDirective(line, pline)
+      when "dat" then @parseData(line, pline)
       when "fill" then @parseFillDirective(line, pline)
       else
         line.pointTo(m)
@@ -593,13 +599,11 @@ class Parser
   # weird one: #fill (count) (item)
   parseFillDirective: (line, pline) ->
     line.skipWhitespace()
-    pline.directive = null
-    pline.data = []
-    count = @parseExpression(line).evaluate()
+    count = @parseExpression(line)
     line.scanAssert(",", Span.Operator)
     line.skipWhitespace()
     item = @parseExpression(line)
-    for i in [0 ... count] then pline.data.push(item)
+    pline.data = [ count, item ]
     if not line.finished() then line.fail "Unexpected content after FILL <count>, <expr>"
 
 

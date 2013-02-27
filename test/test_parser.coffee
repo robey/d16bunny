@@ -249,9 +249,14 @@ describe "Parser", ->
     it "parses data", ->
       [ pline, html ] = parseLine("dat 3, 9, '@', \"cat\", p\"cat\"")
       pline.toString().should.eql("")
-      pline.data.map((x) => x.evaluate()).should.eql([ 3, 9, 0x40, 0x63, 0x61, 0x74, 0x6361, 0x7400 ])
+      pline.foldConstants()
+      pline.data.should.eql([ 3, 9, 0x40, 0x63, 0x61, 0x74, 0x6361, 0x7400 ])
       html.should.eql("{instruction:dat} {number:3}{operator:,} {number:9}{operator:,} " +
         "{string:'@'}{operator:,} {string:\"cat\"}{operator:,} {string:p\"cat\"}")
+      [ pline, html ] = parseLine(".dat 8, 7")
+      pline.toString().should.eql("")
+      pline.foldConstants()
+      pline.data.should.eql([ 8, 7 ])
 
     it "parses data with unresolved expression", ->
       [ pline, html ] = parseLine("dat 3, 9, cat + 1")
@@ -266,13 +271,20 @@ describe "Parser", ->
 
     it "parses fill", ->
       [ pline, html ] = parseLine(".fill 6, 900")
-      pline.toString().should.eql("")
-      pline.data.map((x) => x.evaluate()).should.eql([ 900, 900, 900, 900, 900, 900 ])
+      pline.toString().should.eql(".fill")
+      pline.foldConstants()
+      pline.data.should.eql([ 900, 900, 900, 900, 900, 900 ])
       html.should.eql("{directive:.fill} {number:6}{operator:,} {number:900}")
       [ pline, html ] = parseLine(".fill 6, hello")
-      pline.toString().should.eql("")
-      pline.data.map((x) => x.evaluate(hello: 901)).should.eql([ 901, 901, 901, 901, 901, 901 ])
+      pline.toString().should.eql(".fill")
+      pline.foldConstants(hello: 901)
+      pline.data.should.eql([ 901, 901, 901, 901, 901, 901 ])
       html.should.eql("{directive:.fill} {number:6}{operator:,} {identifier:hello}")
+      [ pline, html ] = parseLine(".fill count, hello")
+      pline.toString().should.eql(".fill")
+      pline.foldConstants(count: 3, hello: 902)
+      pline.data.should.eql([ 902, 902, 902 ])
+      html.should.eql("{directive:.fill} {identifier:count}{operator:,} {identifier:hello}")
 
     it "parses rom strings", ->
       [ pline, html ] = parseLine("dat r\"cat\"")
