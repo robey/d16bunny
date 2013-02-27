@@ -10,7 +10,7 @@ class Expression
     e.evaluate = (symtab) ->
       throw new AssemblerError(@text, @pos, "Constant expressions may not contain register references")
     e.toString = -> @register.toUpperCase()
-    e.resolvable = (symtab={}) -> true
+    e.resolvable = (symtab={}) -> false
     e
 
   Literal: (text, pos, n) ->
@@ -29,9 +29,24 @@ class Expression
     e.evaluate = (symtab) ->
       if not symtab[@label]?
         throw new AssemblerError(@text, @pos, "Can't resolve reference to " + @label)
-      symtab[@label]
+      if @recursing then throw new AssemblerError(@text, @pos, "Recursive reference chain")
+      expr = symtab[@label]
+      if expr instanceof Expression
+        @recursing = true
+        expr = expr.evaluate(symtab)
+        @recursing = false
+      expr
     e.toString = -> @label
-    e.resolvable = (symtab={}) -> symtab[@label]?
+    e.resolvable = (symtab={}) ->
+      # if it's infinite recursion, we'll catch you on evaluate.
+      if @recursing then return false
+      expr = symtab[@label]
+      if not expr? then return false
+      if not (expr instanceof Expression) then return true
+      @recursing = true
+      rv = expr.resolvable(symtab)
+      @recursing = false
+      rv
     e
 
   Unary: (text, pos, op, r) ->
@@ -83,7 +98,7 @@ class Expression
   toString: -> throw "must be implemented in objects"
 
   # return true if this expression can be resolved into a final value, given
-  # this symtab.
+  # this symtab. never throw an exception.
   resolvable: (symtab={}) -> throw "must be implemented in objects"
 
   # Given a symbol table of names and values, resolve this expression tree
