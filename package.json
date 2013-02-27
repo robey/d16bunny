@@ -1,6 +1,6 @@
 {
   "name": "d16bunny",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "a small assembler for the DCPU",
   "keywords": [ "dcpu", "coffee-script" ],
   "author": "Robey Pointer <robeypointer@gmail.com>",
@@ -9,7 +9,8 @@
     "prepublish": "./node_modules/coffee-script/bin/cake build"
   },
   "dependencies": {
-    "nopt": "*"
+    "nopt": "*",
+    "sprintf": "*"
   },
   "devDependencies": {
     "coffee-script": "*",

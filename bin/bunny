@@ -5,6 +5,7 @@ fs = require 'fs'
 nopt = require 'nopt'
 sync = require 'sync'
 util = require 'util'
+sprintf = require("sprintf").sprintf
 Assembler = require('../src/d16bunny').Assembler
 
 version = "2.0.0"
@@ -84,15 +85,11 @@ help = ->
   console.log "        dump a list of defined symbols, in lexical and value order"
   exit 0
 
-padleft = (s, n, ch = ' ') ->
-  while s.length < n then s = ch + s
-  s
-
-hex = (n) -> "0x" + padleft(n.toString(16), 4, '0')
+hex = (n) -> sprintf("0x%04x", n)
 
 parseIntArg = (s) ->
-  if s.slice(0, 2) == "0x"
-    parseInt(s.slice(2), 16)
+  if s[0...2] == "0x"
+    parseInt(s[2...], 16)
   else
     parseInt(s)
 
@@ -145,12 +142,12 @@ readFile = (filename) ->
 assemble = (filename) ->
   data = readFile(filename)
   lines = data.split("\n")
-  logger = (lineno, pos, message) ->
-    logError("#{filename}:#{lineno + 1} - #{message}")
-    if lineno >= 0 then logPosition(lines[lineno], pos)
-  asm = new Assembler(logger)
+  logger = (fname, y, x, message) ->
+    logError("#{fname}:#{y + 1} - #{message}")
+    if x >= 0 then logPosition(lines[y], x)
+  asm = new Assembler(logger, maxErrors)
   if options.debug? then asm.debugger = console.log
-  asm.compile(lines, org, maxErrors)
+  asm.compile(lines, org, filename)
 
 outputDat = (output) ->
   out = []
@@ -219,12 +216,13 @@ else
 
 sync ->
   success = true
-  tstart = new Date().getTime()
+  tstart = Date.now()
   for filename in filenames
     unless options.quiet? then console.log "Assembling #{filename}"
     out = assemble(filename)
-    if out.errorCount > 0
-      console.error(red("Errors: #{out.errorCount}"))
+    if out.errors.length > 0
+      console.error(red("Errors: #{out.errors.length}"))
+      console.error("")
       success = false
     else
       unless options.quiet?
@@ -243,6 +241,6 @@ sync ->
         fs.writeFileSync(newFilename, outputDat(out), "UTF-8")
       else
         fs.writeFileSync(newFilename, outputImage(out))
-  tend = new Date().getTime()
+  tend = Date.now()
   unless options.quiet? then console.log "Finished in #{tend - tstart} msec."
   exit(if success then 0 else 1)
