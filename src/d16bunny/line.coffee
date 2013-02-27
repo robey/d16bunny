@@ -162,7 +162,7 @@ class Line
 
   parseDirective: (name) -> @parseWord(name, Span.Directive).toLowerCase()
 
-  parseMacroName: (name) -> @parseWord(name, Span.Instruction)
+  parseMacroName: (name) -> @parseWord(name, Span.Instruction).toLowerCase()
         
   # just want all the literal text up to the next comma, closing paren, or
   # comment. but also allow quoting strings and chars.
