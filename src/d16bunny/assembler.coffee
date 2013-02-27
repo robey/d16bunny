@@ -166,6 +166,9 @@ class Assembler
           # if anything failed, fill it in with zeros.
           for i in [0 ... dline.data.length]
             if typeof dline.data[i] == "object" then dline.data[i] = 0
+    # make sure everything in the symtab is resolved now.
+    for k, v of @symtab
+      if v instanceof Expression then @symtab[k] = v.evaluate(@symtab)
     new AssemblerOutput(@errors, dlines, @symtab)
 
   # ----- parse phase
@@ -259,6 +262,7 @@ class Assembler
 
   resolveLine: (dline, transformer=null) ->
     @debug "+ resolving @ ", dline.address, ": ", dline
+    @debug "  in ", @symtab
     @symtab["."] = dline.address
     @symtab["$"] = dline.address
     dline.data = dline.data.map (item) =>

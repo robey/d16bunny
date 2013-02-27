@@ -100,7 +100,7 @@ describe "Assembler.compileLine", ->
     a = new d16bunny.Assembler(logger)
     dlines = for pline in a.parse([ ":happy equ 23" ]) then a.compileLine(pline, 0)
     dlines[0].toString().should.eql("0x0000: ")
-    a.constants["happy"].should.eql(23)
+    a.constants["happy"].evaluate().should.eql(23)
 
   it "compiles a meaningless but valid line", ->
     [ dline, symtab ] = compileLine("set 1, a", 0)

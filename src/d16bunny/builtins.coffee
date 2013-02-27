@@ -3,6 +3,8 @@
 
 BuiltinMacros = """
 
+.define d16bunny 1
+
 .macro jmp(addr) {
   set pc, addr
 }
@@ -14,13 +16,15 @@ BuiltinMacros = """
 .macro ret {
   set pc, pop
 }
+.macro rts {
+  set pc, pop
+}
 
 .macro bra(addr) {
 .onerror "Illegal argument to BRA."
   add pc, addr - .next
 :.next
 }
-
 """
 
 exports.BuiltinMacros = BuiltinMacros
