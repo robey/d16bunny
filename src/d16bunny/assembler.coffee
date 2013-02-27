@@ -151,8 +151,7 @@ class Assembler
       for k, v of @constants then @symtab[k] = v
       dlines = plines.map (pline) =>
         if pline?
-          # FIXME i don't think compileLine can throw an exception anymore.
-          dline = @process filename, pline.lineNumber, => @compileLine(pline, address)
+          dline = @compileLine(pline, address)
           @debug "  data: ", dline
           if dline? then address = dline.nextAddress()
           dline
@@ -207,6 +206,7 @@ class Assembler
       if not progress
         for k, v of unresolved
           @process v.filename, v.lineNumber, => v.evaluate(@constants) & 0xffff
+        return
 
   addBuiltinMacros: (parser) ->
     for text, lineNumber in BuiltinMacros.split("\n")
