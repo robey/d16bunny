@@ -577,7 +577,7 @@ class Parser
     if not line.finished() then line.fail "Unexpected content after ENDIF"
     if @ifStack.length == 0 then line.fail "Dangling ENDIF"
     @ifStack.pop()
-    if @ifStack.length > 0 then @ignoring = @ifStack[@ifStack.length - 1]
+    @ignoring = if @ifStack.length > 0 then @ifStack[@ifStack.length - 1] else false
 
   parseOnErrorDirective: (line, pline) ->
     if not @inMacro? then line.fail "Can only use .onerror inside macros"
