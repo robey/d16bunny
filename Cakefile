@@ -34,24 +34,14 @@ checkfile = (file1, file2) ->
 synctask = (name, description, f) ->
   task name, description, -> (sync -> f())
 
-assemblerFiles = [
-  "assembler",
-  "builtins",
-  "dcpu",
-  "disassembler",
-  "errors",
-  "expression",
-  "line",
-  "operand",
-  "output",
-  "parser",
-  "prettyprint"
-]
-
 ## -----
 
+cake = "./node_modules/coffee-script/bin/cake"
+coffee = "./node_modules/coffee-script/bin/coffee"
+mocha = "./node_modules/mocha/bin/mocha"
+
 synctask "test", "run unit tests", ->
-  run "./node_modules/mocha/bin/mocha -R Progress --compilers coffee:coffee-script --colors"
+  run "#{mocha} -R Progress --compilers coffee:coffee-script --colors"
   console.log "Integration test for d16basm (from maximinus-thrax):"
   for i in [1..5]
     run "./bin/d16basm -q --dat --out /tmp/d16.out testdata/test#{i}.dasm"
@@ -60,22 +50,12 @@ synctask "test", "run unit tests", ->
   console.log "\u001b[32mOK! :)\u001b[0m"
 
 synctask "build", "build javascript", ->
+  console.log "\u001b[1;34mCompiling coffee-script...\u001b[0m"
   run "mkdir -p lib"
-  run "coffee -o lib -c src"
+  run "#{coffee} -o lib -c src"
 
 synctask "clean", "erase build products", ->
   run "rm -rf js lib"
 
 synctask "distclean", "erase everything that wasn't in git", ->
   run "rm -rf node_modules"
-
-synctask "web", "build assember into javascript for browsers", ->
-  run "mkdir -p js"
-  files = ("src/d16bunny/" + x + ".coffee" for x in assemblerFiles)
-  run "coffee -o js -j d16asm-x -c " + files.join(" ")
-  run 'echo "var exports = {};" > js/d16asm.js'
-  # remove the "require" statements.
-  run 'grep -v " = require" js/d16asm-x.js >> js/d16asm.js'
-  run 'echo "var d16bunny = exports; delete exports;" >> js/d16asm.js'
-  run "rm -f js/d16asm-x.js"
-

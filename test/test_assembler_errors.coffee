@@ -52,7 +52,7 @@ describe "Assembler.compile with errors", ->
     # intentionally use a missing symbol, which won't get caught till the resolve stage.
     code = [ "jmp nothing", "", "", "what" ]
     out = build(code)
-    out.errors[1][0..2].should.eql([ "(builtins)", 0, 4 ])
+    out.errors[1][0..2].should.eql([ "test", 0, 4 ])
     out.errors[1][3].should.match(/nothing/)
     out.errors[0][0..2].should.eql([ "test", 3, 0 ])
     out.errors[0][3].should.match(/what/)
