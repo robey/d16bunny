@@ -90,6 +90,7 @@ class Assembler
   # line # (y) and pos (x) are counted from zero.
   constructor: (@logger, @maxErrors = 10) ->
     if not @logger? then @logger = (filename, lineNumber, pos, reason) ->
+    @includer = null
     @reset()
 
   reset: ->
@@ -173,6 +174,13 @@ class Assembler
     parser = new Parser()
     parser.debugger = @debugger
     @addBuiltinMacros(parser)
+    plines = @parseChunk(parser, textLines, filename)
+    @addConstants(parser.constants)
+    # resolve any expressions that can be taken care of by the constants
+    for pline in plines then if pline? then pline.foldConstants(@symtab)
+    plines
+
+  parseChunk: (parser, textLines, filename) ->
     plines = []
     for text, i in textLines
       pline = @process filename, i, => parser.parseLine(text, filename, i)
@@ -184,16 +192,16 @@ class Assembler
         else
           newlines = @process filename, i, => @includer(pline.name)
           return [] if @giveUp()
-          # fixme
+          plines = plines.concat @parseChunk(parser, newlines, pline.name)
       plines.push(pline)
-    @addConstants(parser.constants)
-    # resolve any expressions that can be taken care of by the constants
-    for pline in plines then if pline? then pline.foldConstants(@symtab)
     plines
 
   # given a map of (key -> expr), try to resolve them all and add them into
   # the symtab of (key -> value). throw an error if any are unresolvable.
   addConstants: (constants) ->
+    for k, v of constants then @constants[k] = v
+    return
+
     unresolved = {}
     for k, v of constants then unresolved[k] = v
     while Object.keys(unresolved).length > 0

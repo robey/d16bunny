@@ -139,15 +139,21 @@ readFile = (filename) ->
     logError("Can't read file: " + filename + " - " + e)
     exit(1)
 
-assemble = (filename) ->
-  data = readFile(filename)
-  lines = data.split("\n")
+assemble = (filename, folder) ->
+  files = {}
+  files[filename] = readFile(filename).split("\n")
   logger = (fname, y, x, message) ->
-    logError("#{fname}:#{y + 1} - #{message}")
-    if x >= 0 then logPosition(lines[y], x)
+    logError("#{fname} (#{y + 1}) - #{message}")
+    if x >= 0 then logPosition(files[fname][y], x)
   asm = new Assembler(logger, maxErrors)
+  asm.includer = (filename) =>
+    unless options.quiet? then console.log "+ Including #{filename}"
+    if files[filename] then return files[filename]
+    fullpath = if ("/" in filename) then filename else "#{folder}/#{filename}"
+    files[filename] = readFile(fullpath).split("\n")
+    files[filename]
   if options.debug? then asm.debugger = console.log
-  asm.compile(lines, org, filename)
+  asm.compile(files[filename], org, filename)
 
 outputDat = (output) ->
   out = []
@@ -218,8 +224,9 @@ sync ->
   success = true
   tstart = Date.now()
   for filename in filenames
-    unless options.quiet? then console.log "Assembling #{filename}"
-    out = assemble(filename)
+    [ folder, basename, oldext ] = parseFilename(filename)
+    unless options.quiet? then console.log "Assembling #{basename}"
+    out = assemble(filename, folder)
     if out.errors.length > 0
       console.error(red("Errors: #{out.errors.length}"))
       console.error("")
@@ -229,7 +236,6 @@ sync ->
         for block in out.pack()
           console.log "  #{hex(block.org)} - #{hex(block.org + block.data.length - 1)}"
       if options.symtab? then symtab(out)
-      [ folder, basename, oldext ] = parseFilename(filename)
       newFilename = if options.out?
         options.out
       else if options.dest?

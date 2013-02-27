@@ -10,6 +10,7 @@ describe "Assembler.compile", ->
     if options.debugging?
       a.debugger = console.log
       console.log "----------"
+    if options.includer? then a.includer = options.includer
     out = a.compile(code)
     out.errors.length.should.equal(0)
     out
@@ -84,7 +85,6 @@ describe "Assembler.compile", ->
       dump(build(code)).should.eql([
         "0x0000: 0x7c63, 0xfffa"
       ])
-
 
   it "compiles a small program", ->
     code = [
@@ -262,4 +262,34 @@ describe "Assembler.compile", ->
     ]
     dump(build(code).pack()).should.eql([
       "0x1000: 0x8401, 0x8872, 0x8f83, 0x7f81, 0x1006, 0x8481, 0x6381"
+    ])
+
+  it "handles includes", ->
+    colors = [
+      ".define blue 4"
+      ".define green 2"
+    ]
+    code = [
+      ".define red 1"
+      ".define blue 9"
+      ".include \"colors\""
+      "set a, blue"
+      "set b, red"
+      "set c, green"
+    ]
+    includer = (filename) =>
+      if filename == "colors" then colors
+    dump(build(code, includer: includer).pack()).should.eql([
+      "0x0000: 0x9401, 0x8821, 0x8c41"
+    ])
+
+  it "handles definitions that refer to labels", ->
+    code = [
+      ".org 0x200"
+      ":start dat 0"
+      ".define end start + 3"
+      " dat end"
+    ]
+    dump(build(code).pack()).should.eql([
+      "0x0200: 0x0000, 0x0203"
     ])
