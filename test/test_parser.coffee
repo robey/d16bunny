@@ -157,12 +157,18 @@ describe "Parser", ->
     it "parses pointer operations", ->
       parseOperand("[0x20 + x]").should.eql("<19, 32>")
       html.should.eql("{operator:[}{number:0x20} {operator:+} {register:x}{operator:]}")
-      parseOperand("[15+24+i]").should.eql("<22, 39>")
-      html.should.eql("{operator:[}{number:15}{operator:+}{number:24}{operator:+}{register:i}{operator:]}")
       parseOperand("[a+9]").should.eql("<16, 9>")
       html.should.eql("{operator:[}{register:a}{operator:+}{number:9}{operator:]}")
       parseOperand("[a-2]").should.eql("<16, 65534>")
       html.should.eql("{operator:[}{register:a}{operator:-}{number:2}{operator:]}")
+
+    it "parses complex pointer operations", ->
+      parseOperand("[15+24+i]").should.eql("<22, 39>")
+      html.should.eql("{operator:[}{number:15}{operator:+}{number:24}{operator:+}{register:i}{operator:]}")
+      parseOperand("[i+15+24]").should.eql("<22, 39>")
+      html.should.eql("{operator:[}{register:i}{operator:+}{number:15}{operator:+}{number:24}{operator:]}")
+      parseOperand("[15+i+24]").should.eql("<22, 39>")
+      html.should.eql("{operator:[}{number:15}{operator:+}{register:i}{operator:+}{number:24}{operator:]}")
 
     it "parses pick", ->
       parseOperand("pick 23").should.eql("<26, 23>")

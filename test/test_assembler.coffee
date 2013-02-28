@@ -106,3 +106,8 @@ describe "Assembler.compileLine", ->
     [ dline, symtab ] = compileLine("set 1, a", 0)
     dline.toString().should.eql("0x0000: 0x03e1, 0x0001")
 
+  it "compiles a complex-looking operation", ->
+    [ dline, symtab ] = compileLine("XOR [I+VISFONT+2], [I+FONTXOR1]", 0x200, VISFONT: 0xf000, FONTXOR1: 0xd000, resolve: true)
+    dline.toString().should.eql("0x0200: 0x5acc, 0xd000, 0xf002")
+
+

@@ -394,19 +394,13 @@ class Parser
       code = if dereference then Operand.RegisterDereference else Operand.Register
       return new Operand(m.pos, code + Dcpu.Registers[expr.register])
     # special case: [literal + register]
-    if dereference and expr.binary? and (expr.left.register? or expr.right.register?)
-      if expr.binary == '+' or (expr.binary == '-' and expr.left.register?)
-        register = if expr.left.register? then expr.left.register else expr.right.register
-        if not Dcpu.Registers[register]?
+    if dereference
+      [ r, e ] = expr.extractRegister()
+      if r?
+        if not Dcpu.Registers[r]?
           line.pointTo(m)
-          line.fail "You can't use #{register.toUpperCase()} in [R+n] form"
-        op = expr.binary
-        expr = if expr.left.register? then expr.right else expr.left
-        # allow [R-n]
-        if op == '-' then expr = Expression::Unary(expr.text, expr.pos, '-', expr)
-        return new Operand(m.pos, Operand.RegisterIndex + Dcpu.Registers[register], expr)
-      line.pointTo(m)
-      line.fail "Only a register +/- a constant is allowed"
+          line.fail "You can't use #{r.toUpperCase()} in [R+n] form"
+        return new Operand(m.pos, Operand.RegisterIndex + Dcpu.Registers[r], e)
     new Operand(m.pos, (if dereference then Operand.ImmediateDereference else Operand.Immediate), expr)
 
   # ----- data

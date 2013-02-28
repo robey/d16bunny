@@ -96,7 +96,8 @@ class Assembler
   reset: ->
     # current symbol table for resolving named references
     @symtab = {}
-    # constants (copied into symtab) which don't change when code size changes
+    # constants (copied into symtab) which don't change when code size changes.
+    # they may still be unresolved (referring to labels).
     @constants = {}
     @errors = []
     @recompile = false
@@ -136,7 +137,20 @@ class Assembler
       @error(filename, lineNumber, pos, reason)
       if @giveUp() then @error(filename, lineNumber, pos, "Too many errors; giving up.")
       null
-    
+
+  # do a full two-stage compile of this source.
+  # returns an AssemblerOutput object with:
+  #   - errors: list of errors discovered (also reported through @logger)
+  #   - lines: the list of compiled line objects. each compiled line is:
+  #     - address: memory address of this line
+  #     - data: words of compiled data (length may be 0, or quite large for
+  #       expanded macros or "dat" blocks)
+  # the 'lines' output array will always be the same length as the 'lines'
+  # input array, but the 'data' field on some lines may be empty if no code
+  # was compiled for that line, or there were too many errors.
+  #
+  # the compiler will try to continue if there are errors, to greedily find
+  # as many of the errors as it can. after 'maxErrors', it will stop.
   compile: (textLines, address=0, filename="") ->
     plines = @parse(textLines, filename)
     if @giveUp() then return new AssemblerOutput(@errors, [], @symtab)
@@ -168,7 +182,7 @@ class Assembler
             if typeof dline.data[i] == "object" then dline.data[i] = 0
     # make sure everything in the symtab is resolved now.
     for k, v of @symtab
-      if v instanceof Expression then @symtab[k] = v.evaluate(@symtab)
+      if v instanceof Expression then @symtab[k] = v.evaluate(@symtab) & 0xffff
     new AssemblerOutput(@errors, dlines, @symtab)
 
   # ----- parse phase
@@ -178,9 +192,9 @@ class Assembler
     parser.debugger = @debugger
     @addBuiltinMacros(parser)
     plines = @parseChunk(parser, textLines, filename)
-    @addConstants(parser.constants)
+    for k, v of parser.constants then @constants[k] = v
     # resolve any expressions that can be taken care of by the constants
-    for pline in plines then if pline? then pline.foldConstants(@symtab)
+    for pline in plines then if pline? then pline.foldConstants(@constants)
     plines
 
   parseChunk: (parser, textLines, filename) ->
@@ -198,26 +212,6 @@ class Assembler
           plines = plines.concat @parseChunk(parser, newlines, pline.name)
       plines.push(pline)
     plines
-
-  # given a map of (key -> expr), try to resolve them all and add them into
-  # the symtab of (key -> value). throw an error if any are unresolvable.
-  addConstants: (constants) ->
-    for k, v of constants then @constants[k] = v
-    return
-
-    unresolved = {}
-    for k, v of constants then unresolved[k] = v
-    while Object.keys(unresolved).length > 0
-      progress = false
-      for k, v of unresolved
-        if v.resolvable(@constants)
-          @constants[k] = v.evaluate(@constants) & 0xffff
-          delete unresolved[k]
-          progress = true
-      if not progress
-        for k, v of unresolved
-          @process v.filename, v.lineNumber, => v.evaluate(@constants) & 0xffff
-        return
 
   addBuiltinMacros: (parser) ->
     for text, lineNumber in BuiltinMacros.split("\n")
@@ -262,7 +256,6 @@ class Assembler
 
   resolveLine: (dline, transformer=null) ->
     @debug "+ resolving @ ", dline.address, ": ", dline
-    @debug "  in ", @symtab
     @symtab["."] = dline.address
     @symtab["$"] = dline.address
     dline.data = dline.data.map (item) =>
@@ -281,7 +274,7 @@ class Assembler
     if operands.length > 0
       operand = operands[operands.length - 1]
       if operand.checkCompact(@symtab)
-        @debug "  compacted ", operand
+        @debug "  compacted changed on ", operand
         # signal that we have to re-run compilation
         @recompile = true
     if dline.expanded?
@@ -334,25 +327,6 @@ class Assembler
       pline.operands[1].immediate = 0x10000 - value
     @recompile = true
     @debug "  optimize/add: ", pline
-
-
-
-
-
-  # do a full two-stage compile of this source.
-  # returns an AssemblerOutput object with:
-  #   - errorCount: number of errors discovered (reported through @logger)
-  #   - lines: the list of compiled line objects. each compiled line is:
-  #     - org: memory address of this line
-  #     - data: words of compiled data (length may be 0, or quite large for
-  #       expanded macros or "dat" blocks)
-  # the 'lines' output array will always be the same length as the 'lines'
-  # input array, but the 'data' field on some lines may be empty if no code
-  # was compiled for that line, or there were too many errors.
-  #
-  # the compiler will try to continue if there are errors, to greedily find
-  # as many of the errors as it can. after 'maxErrors', it will stop.
-
 
 
 exports.DataLine = DataLine

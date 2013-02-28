@@ -90,6 +90,20 @@ class Expression
         else throw new AssemblerError(@text, @pos, "Internal error (undefined binary operator)")
     e.toString = -> "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")"
     e.resolvable = (symtab={}) -> @left.resolvable(symtab) and @right.resolvable(symtab)
+    e.extractRegister = ->
+      return null unless @binary in [ "+", "-" ]
+      if @left.register?
+        expr = @right
+        if @binary == "-" then expr = Expression::Unary(expr.text, expr.pos, "-", expr)
+        return [ @left.register, expr ]
+      if @binary == "+" and @right.register?
+        return [ @right.register, @left ]
+      [ r, expr ] = @left.extractRegister(true)
+      if r? then return [ r, Expression::Binary(@text, @pos, @binary, expr, @right) ]
+      if @binary == "+"
+        [ r, expr ] = @right.extractRegister()
+        if r? then return [ r, Expression::Binary(@text, @pos, @binary, @left, expr) ]
+      [ null, null ]
     e
 
   constructor: (@text, @pos) ->
@@ -105,5 +119,10 @@ class Expression
   # into a single number. Any register reference, or reference to a symbol
   # that isn't defined in 'symtab' will be an error.
   evaluate: (symtab={}) -> throw "must be implemented in objects"
+
+  # if the expression can boil down to some form of (register + expr), then
+  # extract and return [register, expr]. otherwise, null.
+  extractRegister: -> [ null, null ]
+
 
 exports.Expression = Expression
