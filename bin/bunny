@@ -81,6 +81,8 @@ help = ->
   console.log "    --dat"
   console.log "        create generic DCPU assembly made out of DAT statements (useful for"
   console.log "        copying into less intelligent assemblers/emulators)"
+  console.log "    --little-endian"
+  console.log "        write memory image in little-endian format (default is network order)"
   console.log "    --symtab"
   console.log "        dump a list of defined symbols, in lexical and value order"
   exit 0
@@ -170,12 +172,26 @@ outputDat = (output) ->
   out.join("\n")
 
 outputImage = (output) ->
-  # standard in the DCPU world is little-endian. not sure why. :)
   memory = output.createImage()
-  buffer = new Buffer(0x20000)
+  buffer = new Buffer(0x20004)
   for i in [0...0x10000]
-    buffer[i * 2] = memory[i] & 0xff
-    buffer[i * 2 + 1] = (memory[i] >> 8) & 0xff
+    if memory[i] > 0xffff then console.log "GODDAMMIT: #{hex(i)} - #{hex(memory[i])}"
+    if options["little-endian"]?
+      buffer[i * 2] = memory[i] & 0xff
+      buffer[i * 2 + 1] = (memory[i] >> 8) & 0xff
+    else
+      buffer[i * 2] = (memory[i] >> 8) & 0xff
+      buffer[i * 2 + 1] = memory[i] & 0xff
+  # add byte order indicator
+  if options["little-endian"]?
+    buffer[0x20000] = 0xff
+    buffer[0x20001] = 0xfe
+  else
+    buffer[0x20000] = 0xfe
+    buffer[0x20001] = 0xff
+  # header to identify a memory image
+  buffer[0x20002] = 0x10
+  buffer[0x20003] = 0x16
   buffer
 
 symtab = (output) ->
@@ -201,6 +217,7 @@ possibleOptions =
   "org": String
   "dest": String
   "out": String
+  "little-endian": Boolean
 shortHands =
   "D": "--debug"
   "q": "--quiet"
@@ -213,12 +230,7 @@ unless options.quiet? then banner()
 
 maxErrors = if options["max-errors"]? then options["max-errors"] else 10
 org = if options.org? then parseIntArg(options.org) else 0
-
-# FIXME what is the standard extension for these things?
-if options.dat?
-  extension = ".d16dat"
-else
-  extension = ".d16"
+extension = if options.dat? then "-dat.dasm" else ".d16"
 
 sync ->
   success = true
@@ -234,14 +246,12 @@ sync ->
     else
       unless options.quiet?
         for block in out.pack()
-          console.log "  #{hex(block.org)} - #{hex(block.org + block.data.length - 1)}"
+          console.log "  #{hex(block.address)} - #{hex(block.address + block.data.length - 1)}"
       if options.symtab? then symtab(out)
       newFilename = if options.out?
         options.out
-      else if options.dest?
-        options.dest + "/" + basename + extension
-      else
-        folder + "/" + extension
+      else 
+        (if options.dest? then options.dest else folder) + "/#{basename}#{extension}"
       unless options.quiet? then console.log "Writing #{newFilename}"
       if options.dat?
         fs.writeFileSync(newFilename, outputDat(out), "UTF-8")
