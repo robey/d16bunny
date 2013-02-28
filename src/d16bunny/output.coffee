@@ -75,7 +75,8 @@ class AssemblerOutput
       memory = new Array(0x10000)
       for j in [0...0x10000] then memory[j] = 0
     for block in @pack()
-      memory[block.address ... (block.address + block.data.length)] = block.data
+      # can't use splice here. apparently splice is recursive (!)
+      for i in [0 ... block.data.length] then memory[block.address + i] = block.data[i]
     memory
 
 exports.AssemblerOutput = AssemblerOutput
