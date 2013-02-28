@@ -96,6 +96,7 @@ class Assembler
   reset: ->
     # current symbol table for resolving named references
     @symtab = {}
+    @labels = {}
     # constants (copied into symtab) which don't change when code size changes.
     # they may still be unresolved (referring to labels).
     @constants = {}
@@ -163,6 +164,7 @@ class Assembler
       @recompile = false
       address = originalAddress
       @symtab = {}
+      @labels = {}
       for k, v of @constants then @symtab[k] = v
       dlines = plines.map (pline) =>
         if pline?
@@ -183,7 +185,7 @@ class Assembler
     # make sure everything in the symtab is resolved now.
     for k, v of @symtab
       if v instanceof Expression then @symtab[k] = v.evaluate(@symtab) & 0xffff
-    new AssemblerOutput(@errors, dlines, @symtab)
+    new AssemblerOutput(@errors, dlines, @symtab, @labels)
 
   # ----- parse phase
 
@@ -233,7 +235,9 @@ class Assembler
     if pline.directive?
       switch pline.directive
         when "org" then address = pline.data[0]
-    if pline.label? then @symtab[pline.label] = address
+    if pline.label?
+      @symtab[pline.label] = address
+      @labels[pline.label] = address
     if pline.data.length > 0 and not pline.directive?
       data = pline.data.map (expr) =>
         if (expr instanceof Expression) and expr.resolvable(@symtab)

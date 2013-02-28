@@ -170,24 +170,49 @@ class Line
     inString = false
     inChar = false
     rv = ""
+    mark = @pos
     while not @finished()
-      return rv if (@text[@pos] in [ ';', ')', ',' ]) and not inString and not inChar
-      start = @pos
+      if (@text[@pos] in [ ';', ')', ',' ]) and not inString and not inChar
+        while @pos > mark and @text[@pos - 1] == " " then @pos -= 1
+        # FIXME: "string" may not be the best syntax indicator
+        if @pos > mark then @addSpan(Span.String, mark, @pos)
+        return rv
       if @text[@pos] == '\\' and @pos + 1 < @end
+        if @pos > mark then @addSpan(Span.String, mark, @pos)
         rv += @text[@pos++]
         rv += @text[@pos++]
-        @addSpan(Span.StringEscape, start, @pos)
+        @addSpan(Span.StringEscape, @pos - 2, @pos)
+        mark = @pos
       else
         ch = @text[@pos]
         rv += ch
         if ch == '"' then inString = not inString
         if ch == "\'" then inChar = not inChar
         @pos++
-        # FIXME: "string" may not be the best syntax indicator
-        @addSpan(Span.String, start, @pos)
     if inString then @fail "Expected closing \""
     if inChar then @fail "Expected closing \'"
+    if @pos > mark then @addSpan(Span.String, mark, @pos)
     rv
+
+  # return the text part of the string that includes any leading/trailing
+  # whitespace or comment, but not the meat of it. this lets you change the
+  # content of a line but preserve formatting and comments.
+  getPrefixSuffix: ->
+    if @spans.length == 0 then return [ "", "" ]
+    pos = 0
+    i = 0
+    if @spans[0].type == Span.Label
+      if @spans.length == 1 then return [ "", "" ]
+      pos = @spans[0].end
+      i = 1
+    prefix = if @spans[i].start > pos then @text[pos ... @spans[i].start] else ""
+    suffix = ""
+    j = @spans.length - 1
+    if @spans[j].type == "comment"
+      pos = if j > i then @spans[j - 1].end else @spans[j].start
+      suffix = @text[pos...]
+    [ prefix, suffix ]
+
 
 Line.SymbolRegex = /^[a-zA-Z_.][a-zA-Z_.0-9]*/
 

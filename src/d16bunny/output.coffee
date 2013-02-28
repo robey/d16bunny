@@ -1,16 +1,18 @@
 DataLine = require("./assembler").DataLine
+Disassembler = require("./disassembler").Disassembler
+sprintf = require("sprintf").sprintf
 
 class AssemblerOutput
   # errors: array of errors discovered (and previously reported through
   #   the @logger attached to the Assembler)
   # lines: the list of compiled line objects
   # symtab: map of named variables/labels
-  constructor: (@errors, @lines, @symtab) ->
+  # labels: the portion of symtab that refers only to code
+  constructor: (@errors, @lines, @symtab, @labels) ->
     @lineMap = []
     for i in [0 ... @lines.length]
       line = @lines[i]
       continue if not line?
-      delete line.pline
       size = line.data.length
       continue if size == 0
       @lineMap.push(address: line.address, end: line.address + size, lineno: i)
@@ -78,5 +80,52 @@ class AssemblerOutput
       # can't use splice here. apparently splice is recursive (!)
       for i in [0 ... block.data.length] then memory[block.address + i] = block.data[i]
     memory
+
+  # create a disassembled form that is simple enough to be understood by
+  # most other assemblers.
+  disassemble: () ->
+    memory = @createImage()
+    disasm = new Disassembler(memory)
+    labelMap = {}
+    for k, v of @labels
+      if not labelMap[v]? and v != 0 then labelMap[v] = []
+      labelMap[v].push(k)
+    origins = for block in @pack() then block.address
+    rv = []
+    lastLineWasBlank = false
+    for dline, i in @lines
+      continue unless dline.pline.line?
+      [ prefix, suffix ] = dline.pline.line.getPrefixSuffix()
+      address = @lineToMem(i)
+      if not address?
+        text = prefix + suffix
+        if text.match(/^\s+$/)?
+          if not lastLineWasBlank then rv.push(text)
+          lastLineWasBlank = true
+        else
+          rv.push text
+        continue
+      lastLineWasBlank = false
+      if address in origins
+        rv.push ""
+        rv.push "ORG 0x" + sprintf("%04x", address)
+        rv.push ""
+      if labelMap[address]? then for name in labelMap[address]
+        rv.push ":#{name}"
+      if dline.pline.data?.length > 0
+        # DAT line
+        makeLine = (segment) ->
+          prefix + "DAT " + segment.map((x) -> sprintf("0x%04x", x)).join(", ") + suffix
+        end = address + dline.pline.data.length
+        while address + 8 < end
+          rv.push makeLine(memory[address ... address + 8])
+          address += 8
+        rv.push makeLine(memory[address ... end])
+      else
+        instruction = disasm.getInstruction(address)
+        instruction.resolve(labelMap)
+        rv.push prefix + instruction.toString() + suffix
+    rv
+
 
 exports.AssemblerOutput = AssemblerOutput

@@ -8,8 +8,8 @@ class Instruction
 
   # if any of the arguments are labels, use the label name.
   resolve: (labels) ->
-    if @aArgument? and labels[@aArgument]? then @aArgument = labels[@aArgument]
-    if @bArgument? and labels[@bArgument]? then @bArgument = labels[@bArgument]
+    if @aArgument? and labels[@aArgument]? then @aArgument = labels[@aArgument][0]
+    if @bArgument? and labels[@bArgument]? then @bArgument = labels[@bArgument][0]
     this
 
   stringify: (x) ->
@@ -49,7 +49,7 @@ class Instruction
     aString = @decodeOperand(@a, @aArgument)
     target = @target()
     if target
-      target = if labels? and labels[target]? then labels[target] else @stringify(target)
+      target = if labels? and labels[target]? then labels[target][0] else @stringify(target)
     comment = if target? and target != aString then "  ; #{target}" else ""
     "#{@opname.toUpperCase()} #{bString}#{aString}#{comment}"
 
@@ -128,7 +128,11 @@ class Disassembler
       aArgument = word
       a = Operand.Immediate
       b = null
-    instruction = new Instruction(pc, @address - pc, opname, a, b, aArgument, bArgument)
+    new Instruction(pc, @address - pc, opname, a, b, aArgument, bArgument)
+
+  getInstruction: (address) ->
+    @address = address
+    @nextInstruction()
 
   disassemble: ->
     out = []
@@ -151,7 +155,8 @@ class Disassembler
       if target? then targets.push(target)
     targets.sort()
     for t, i in targets
-      labels[t] = "t#{i + 1}"
+      if not labels[t]? then labels[t] = []
+      labels[t].push "t#{i + 1}"
     # fill in labels
     for x in instructions then x.resolve(labels)
     # flush
@@ -160,21 +165,21 @@ class Disassembler
     labeled = {}
     for x in instructions
       if x.pc != start
-        if labels[start]?
-          out.push(":#{labels[start]}")
+        if labels[start]? then for name in labels[start]
+          out.push(":#{name}")
           labeled[start] = true
         out.push("")
         out.push(".ORG 0x#{x.pc.toString(16)}")
         indent = "  "
-      if labels[x.pc]?
-        out.push(":#{labels[x.pc]}")
+      if labels[x.pc]? then for name in labels[x.pc]
+        out.push(":#{name}")
         labeled[x.pc] = true
       out.push(indent + x.toString(labels))
       indent = if x.conditional() then (indent + "  ") else "  "
       start = x.pc + x.words
     # clean up missing labels
-    for address, name of labels
-      if not labeled[address]
+    for address, list of labels
+      if not labeled[address] then for name in list
         out.unshift(".DEFINE #{name} 0x#{parseInt(address).toString(16)}")
     out
 

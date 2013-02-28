@@ -31,7 +31,7 @@ describe "Disassembler", ->
   it "decodes an indexed SET", ->
     dis1(0x0661, 0x0004).toString().should.eql("SET [X + 4], B")
     dis1(0x0661, 0x0104).toString().should.eql("SET [X + 0x104], B")
-    dis1(0x0661, 0x0104).resolve(0x104: "house").toString().should.eql("SET [X + house], B")
+    dis1(0x0661, 0x0104).resolve(0x104: [ "house" ]).toString().should.eql("SET [X + house], B")
 
   it "decodes an immediate", ->
     dis1(0x7c21, 0x0384).toString().should.eql("SET B, 0x384")
