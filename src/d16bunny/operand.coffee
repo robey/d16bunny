@@ -9,6 +9,7 @@ class Operand
   constructor: (@pos, @code, @expr) ->
     @immediate = null
     @compacting = false
+    @triedCompacting = false
     @foldConstants()
 
   toString: ->
@@ -40,18 +41,28 @@ class Operand
   # called on that operand.)
   # the compactible-ness is memoized, but resolved expressions are not.
   # this method is meant to be used as an edge-trigger that the size of the
-  # instruction has shrunk, so after a true result, future calls will return
-  # false. it also returns false if there's an expression that can't be 
+  # instruction has shrunk (or grown), so symtab resolution may need to start
+  # over. it also returns false if there's an expression that can't be 
   # resolved yet (so we don't know if it can be compacted).
   checkCompact: (symtab) ->
-    if @compacting or @code != Operand.Immediate then return false
+    if @code != Operand.Immediate then return false
     value = @immediateValue(symtab)
     if not value? then return false
-    if value == 0xffff or value < 31
-      @compacting = true
+    canCompact = (value == 0xffff or value < 31)
+    if canCompact == @compacting then return false
+    # okay, we should change compacting state and return true.
+    if not canCompact
+      # stop compacting, but also set a marker so we don't try again.
+      @compacting = false
+      @triedCompacting = true
       true
     else
-      false
+      # don't change state if we've already been through one round of
+      # compacting and then not. we might be bi-stable, so it's better to
+      # just leave it alone, uncompacted.
+      if @triedCompacting then return false
+      @compacting = true
+      true
 
   # return the 5-bit code for this operand, and any immediate value (or null).
   # if there's an expression that can't be resolved yet, it will be returned

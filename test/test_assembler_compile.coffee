@@ -293,3 +293,19 @@ describe "Assembler.compile", ->
     dump(build(code).pack()).should.eql([
       "0x0200: 0x0000, 0x0203"
     ])
+  
+  it "avoids trying to compact an operation that appears compactable on the first round", ->
+    code = [
+      ":start"
+      "  set y, one"
+      "  set x, one"
+      ":end"
+      # on the first time thru, end-start will appear to be 4. then it will resolve to 2.
+      "  set a, 34-(end-start)"
+      ".define one 1"
+    ]
+    dump(build(code).pack()).should.eql([
+      "0x0000: 0x8881, 0x8861, 0x7c01, 0x0020"
+    ])
+
+
