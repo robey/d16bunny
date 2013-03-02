@@ -460,6 +460,7 @@ class Parser
       when "include" then @parseIncludeDirective(line, pline)
       when "dat" then @parseData(line, pline)
       when "fill" then @parseFillDirective(line, pline)
+      when "error" then @parseError(line, m)
       else
         line.pointTo(m)
         line.fail "Unknown directive: #{pline.directive}"
@@ -599,6 +600,12 @@ class Parser
     item = @parseExpression(line)
     pline.data = [ count, item ]
     if not line.finished() then line.fail "Unexpected content after FILL <count>, <expr>"
+
+  parseError: (line, mark) ->
+    line.skipWhitespace()
+    message = line.parseString()
+    line.pointTo(mark)
+    line.fail message
 
 
 exports.Line = Line
