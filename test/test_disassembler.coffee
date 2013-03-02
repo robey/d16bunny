@@ -87,6 +87,12 @@ describe "Disassembler", ->
       x.toString().should.eql("SET PC, 0x9000")
       x.target().should.eql(0x9000)
 
+    it "and labels them", ->
+      x = dis1at(0x2000, 0x9782)
+      x.toString({ 0x2005 : [ "exit" ] }).should.eql("ADD PC, 4  ; exit")
+      x = dis1(0x7f81, 0x9000)
+      x.resolve({ 0x9000: [ "start" ] }).toString().should.eql("SET PC, start")
+
   describe "finds terminals", ->
     it "in RET", ->
       x = dis1(0x6381)
