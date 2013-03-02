@@ -87,8 +87,8 @@ class AssemblerOutput
     memory = @createImage()
     disasm = new Disassembler(memory)
     labelMap = {}
-    for k, v of @labels
-      if not labelMap[v]? and v != 0 then labelMap[v] = []
+    for k, v of @labels then if v != 0
+      if not labelMap[v]? then labelMap[v] = []
       labelMap[v].push(k)
     origins = for block in @pack() then block.address
     rv = []
