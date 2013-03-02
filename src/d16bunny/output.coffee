@@ -99,7 +99,7 @@ class AssemblerOutput
       address = @lineToMem(i)
       if not address?
         text = prefix + suffix
-        if text.match(/^\s+$/)?
+        if text.match(/^\s*$/)?
           if not lastLineWasBlank then rv.push(text)
           lastLineWasBlank = true
         else
