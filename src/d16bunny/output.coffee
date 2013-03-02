@@ -15,7 +15,7 @@ class AssemblerOutput
       continue if not line?
       size = line.data.length
       continue if size == 0
-      @lineMap.push(address: line.address, end: line.address + size, lineno: i)
+      @lineMap.push(address: line.address, end: line.address + size, lineNumber: i)
     @lineMap.sort((a, b) -> if a.address > b.address then 1 else -1)
 
   # pack the compiled line data into an array of contiguous memory blocks,
@@ -36,7 +36,7 @@ class AssemblerOutput
       if lo >= hi then return null
       n = lo + Math.floor((hi - lo) / 2)
       line = @lineMap[n]
-      if line.address <= address < line.end then return line.lineno
+      if line.address <= address < line.end then return line.lineNumber
       if address < line.address then hi = n else lo = n + 1
 
   # return the line # closest to an address in the compiled code. if there's
@@ -48,23 +48,23 @@ class AssemblerOutput
       if lo == hi
         # find closest candidate
         candidates = []
-        if hi < @lineMap.length then candidates.push(addr: @lineMap[hi].address, lineno: @lineMap[hi].lineno)
-        if lo > 0 then candidates.push(addr: @lineMap[lo - 1].end - 1, lineno: @lineMap[lo - 1].lineno)
+        if hi < @lineMap.length then candidates.push(addr: @lineMap[hi].address, lineNumber: @lineMap[hi].lineNumber)
+        if lo > 0 then candidates.push(addr: @lineMap[lo - 1].end - 1, lineNumber: @lineMap[lo - 1].lineNumber)
         for c in candidates then c.distance = Math.abs(c.addr - address)
         candidates.sort (a, b) => a.distance - b.distance
         if candidates.length == 0 or candidates[0].distance > 0x100 then return null
-        return candidates[0].lineno
+        return candidates[0].lineNumber
       n = lo + Math.floor((hi - lo) / 2)
       line = @lineMap[n]
-      if line.org <= address < line.end then return line.lineno
+      if line.org <= address < line.end then return line.lineNumber
       if address < line.address then hi = n else lo = Math.min(n + 1, hi)
 
   # return the memory address containing code compiled from a given line.
   # if the line has no code on it, return null.
-  lineToMem: (lineno) ->
-    if lineno < 0 or lineno >= @lines.length then return null
-    if @lines[lineno].data.length == 0 then return null
-    @lines[lineno].address
+  lineToMem: (lineNumber) ->
+    if lineNumber < 0 or lineNumber >= @lines.length then return null
+    if @lines[lineNumber].data.length == 0 then return null
+    @lines[lineNumber].address
 
   # put the compiled data into a 128KB memory image.
   # if 'memory' is passed in, it must be an array of at least 64K entries.
