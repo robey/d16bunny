@@ -124,7 +124,7 @@ class AssemblerOutput
       else
         instruction = disasm.getInstruction(address)
         instruction.resolve(labelMap)
-        rv.push prefix + instruction.toString() + suffix
+        rv.push prefix + instruction.toString(labelMap) + suffix
     rv
 
 
