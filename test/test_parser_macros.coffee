@@ -135,3 +135,17 @@ describe "Parser macros", ->
       e.type.should.eql("AssemblerError")
       e.pos.should.equal(13)
       e.message.should.match(/test/)
+
+  it "parses a macro argument with parens", ->
+    parser = new d16bunny.Parser()
+    for text in [
+      ".macro setxyz(r1, r2, r3)"
+      "  set x, r1"
+      "  set y, r2"
+      "  set z, r3"
+      "}"
+    ] then parser.parseLine(text)
+    pline = parser.parseLine("  setxyz(9 * (1 + 2), 7, (10))")
+    pline.toString().should.eql("{ SET <3>, <31, 27>; SET <4>, <31, 7>; SET <5>, <31, 10> }")
+    pline.toDebug().should.eql("  {instruction:setxyz}{operator:(}{string:9 * (1 + 2)}" +
+      "{operator:,} {string:7}{operator:,} {string:(10)}{operator:)}")

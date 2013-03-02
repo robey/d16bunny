@@ -169,10 +169,11 @@ class Line
   parseMacroArg: ->
     inString = false
     inChar = false
+    parenCount = 0
     rv = ""
     mark = @pos
     while not @finished()
-      if (@text[@pos] in [ ';', ')', ',' ]) and not inString and not inChar
+      if (@text[@pos] in [ ';', ')', ',' ]) and not inString and not inChar and parenCount == 0
         while @pos > mark and @text[@pos - 1] == " " then @pos -= 1
         # FIXME: "string" may not be the best syntax indicator
         if @pos > mark then @addSpan(Span.String, mark, @pos)
@@ -188,6 +189,8 @@ class Line
         rv += ch
         if ch == '"' then inString = not inString
         if ch == "\'" then inChar = not inChar
+        if ch == "(" then parenCount += 1
+        if ch == ")" then parenCount -= 1
         @pos++
     if inString then @fail "Expected closing \""
     if inChar then @fail "Expected closing \'"
