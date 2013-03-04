@@ -94,7 +94,7 @@ class Disassembler
 
   nextWord: ->
     word = @memory[@address] || 0
-    @address = (@address + 1) % 0x10000
+    @address = (@address + 1) & 0xffff
     word
 
   nextInstruction: ->

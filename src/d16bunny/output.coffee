@@ -93,6 +93,7 @@ class AssemblerOutput
     origins = for block in @pack() then block.address
     rv = []
     lastLineWasBlank = false
+
     for dline, i in @lines
       continue unless dline.pline.line?
       [ prefix, suffix ] = dline.pline.line.getPrefixSuffix()
@@ -104,27 +105,37 @@ class AssemblerOutput
           lastLineWasBlank = true
         else
           rv.push text
+          lastLineWasBlank = false
         continue
-      lastLineWasBlank = false
       if address in origins
-        rv.push ""
+        rv.push "" unless lastLineWasBlank
         rv.push "ORG 0x" + sprintf("%04x", address)
         rv.push ""
-      if labelMap[address]? then for name in labelMap[address]
-        rv.push ":#{name}"
-      if dline.pline.data?.length > 0
-        # DAT line
-        makeLine = (segment) ->
-          prefix + "DAT " + segment.map((x) -> sprintf("0x%04x", x)).join(", ") + suffix
-        end = address + dline.pline.data.length
-        while address + 8 < end
-          rv.push makeLine(memory[address ... address + 8])
-          address += 8
-        rv.push makeLine(memory[address ... end])
+      lastLineWasBlank = false
+
+      processLine = (pline) ->
+        if labelMap[address]? then for name in labelMap[address]
+          rv.push ":#{name}"
+        if pline.data?.length > 0
+          # DAT line
+          makeLine = (segment) ->
+            prefix + "DAT " + segment.map((x) -> sprintf("0x%04x", x)).join(", ") + suffix
+          end = address + pline.data.length
+          while address + 8 < end
+            rv.push makeLine(memory[address ... address + 8])
+            address += 8
+          rv.push makeLine(memory[address ... end])
+          address = end
+        else
+          instruction = disasm.getInstruction(address)
+          instruction.resolve(labelMap)
+          rv.push prefix + instruction.toString(labelMap) + suffix
+          address = disasm.address
+
+      if dline.pline.expanded?
+        for p in dline.pline.expanded then processLine(p)
       else
-        instruction = disasm.getInstruction(address)
-        instruction.resolve(labelMap)
-        rv.push prefix + instruction.toString(labelMap) + suffix
+        processLine(dline.pline)
     rv
 
 
