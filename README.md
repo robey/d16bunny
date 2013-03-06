@@ -133,12 +133,10 @@ inside character and string data, the following escapes are supported:
 to-do
 -----
 
-- #include "filename"
 - allow "label:"
 - "#align"
 - "#fill"?
-- "#endmacro"
-- define "d16bunny" so people can test for it
+- "#section"
 
 
 thanks

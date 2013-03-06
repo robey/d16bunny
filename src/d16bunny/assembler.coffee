@@ -319,6 +319,7 @@ class Assembler
   # add/sub by a small negative constant can be flipped
   optimizeAdd: (pline) ->
     return if pline.op != "add" and pline.op != "sub"
+    return if pline.operands[1].code != Operand.Immediate
     value = pline.operands[1].immediateValue(@symtab)
     return if not value? or value < 0xff00
     return unless pline.operands[0].code in [ Dcpu.Specials.pc, Dcpu.Specials.sp ]

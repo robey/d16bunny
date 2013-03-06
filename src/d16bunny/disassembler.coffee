@@ -132,7 +132,10 @@ class Disassembler
 
   getInstruction: (address) ->
     @address = address
-    @nextInstruction()
+    x = @nextInstruction()
+    if not x?
+      x = new Instruction(address, 1, "DAT", Operand.Immediate, null, 0, null)
+    x
 
   disassemble: ->
     out = []

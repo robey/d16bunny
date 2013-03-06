@@ -94,6 +94,7 @@ class AssemblerOutput
     rv = []
     lastLineWasBlank = false
 
+    labelsDumped = {}
     for dline, i in @lines
       continue unless dline.pline.line?
       [ prefix, suffix ] = dline.pline.line.getPrefixSuffix()
@@ -115,7 +116,9 @@ class AssemblerOutput
 
       processLine = (pline) ->
         if labelMap[address]? then for name in labelMap[address]
-          rv.push ":#{name}"
+          if not labelsDumped[name]?
+            rv.push ":#{name}"
+            labelsDumped[name] = true
         if pline.data?.length > 0
           # DAT line
           makeLine = (segment) ->
@@ -126,12 +129,13 @@ class AssemblerOutput
             address += 8
           rv.push makeLine(memory[address ... end])
           address = end
-        else
+        else if address < endAddress
           instruction = disasm.getInstruction(address)
           instruction.resolve(labelMap)
           rv.push prefix + instruction.toString(labelMap) + suffix
           address = disasm.address
 
+      endAddress = dline.address + (dline.data?.length or 0)
       if dline.pline.expanded?
         for p in dline.pline.expanded then processLine(p)
       else
