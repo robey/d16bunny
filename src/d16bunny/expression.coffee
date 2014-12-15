@@ -91,7 +91,7 @@ class Expression
     e.toString = -> "(" + @left.toString() + " " + @binary + " " + @right.toString() + ")"
     e.resolvable = (symtab={}) -> @left.resolvable(symtab) and @right.resolvable(symtab)
     e.extractRegister = ->
-      return null unless @binary in [ "+", "-" ]
+      return [ null, null ] unless @binary in [ "+", "-" ]
       if @left.register?
         expr = @right
         if @binary == "-" then expr = Expression::Unary(expr.text, expr.pos, "-", expr)
