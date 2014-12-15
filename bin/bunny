@@ -1,9 +1,7 @@
 #!/usr/bin/env coffee
 
-fibers = require 'fibers'
 fs = require 'fs'
 nopt = require 'nopt'
-sync = require 'sync'
 util = require 'util'
 sprintf = require("sprintf").sprintf
 Assembler = require('../src/d16bunny').Assembler
@@ -104,10 +102,8 @@ streamToString = (stream) ->
   out = ""
   stream.setEncoding("UTF-8")
   stream.on 'data', (data) -> out += data
-  fiber = fibers.current
   stream.on 'end', -> fiber.run()
   stream.resume()
-  fibers.yield()
   out
 
 logError = (text) ->
@@ -245,33 +241,32 @@ maxErrors = if options["max-errors"]? then options["max-errors"] else 10
 org = if options.org? then parseIntArg(options.org) else 0
 extension = if options.dat? then "-dat.dasm" else (if options.simple? then "-simple.dasm" else ".d16")
 
-sync ->
-  success = true
-  tstart = Date.now()
-  for filename in filenames
-    [ folder, basename, oldext ] = parseFilename(filename)
-    unless options.quiet? then console.log "Assembling #{basename}"
-    out = assemble(filename, folder)
-    if out.errors.length > 0
-      console.error(red("Errors: #{out.errors.length}"))
-      console.error("")
-      success = false
+success = true
+tstart = Date.now()
+for filename in filenames
+  [ folder, basename, oldext ] = parseFilename(filename)
+  unless options.quiet? then console.log "Assembling #{basename}"
+  out = assemble(filename, folder)
+  if out.errors.length > 0
+    console.error(red("Errors: #{out.errors.length}"))
+    console.error("")
+    success = false
+  else
+    unless options.quiet?
+      for block in out.pack()
+        console.log "  #{hex(block.address)} - #{hex(block.address + block.data.length - 1)}"
+    if options.symtab? then symtab(out)
+    newFilename = if options.out?
+      options.out
+    else 
+      (if options.dest? then options.dest else folder) + "/#{basename}#{extension}"
+    unless options.quiet? then console.log "Writing #{newFilename}"
+    if options.dat?
+      fs.writeFileSync(newFilename, outputDat(out), "UTF-8")
+    else if options.simple?
+      fs.writeFileSync(newFilename, outputSimple(out), "UTF-8")
     else
-      unless options.quiet?
-        for block in out.pack()
-          console.log "  #{hex(block.address)} - #{hex(block.address + block.data.length - 1)}"
-      if options.symtab? then symtab(out)
-      newFilename = if options.out?
-        options.out
-      else 
-        (if options.dest? then options.dest else folder) + "/#{basename}#{extension}"
-      unless options.quiet? then console.log "Writing #{newFilename}"
-      if options.dat?
-        fs.writeFileSync(newFilename, outputDat(out), "UTF-8")
-      else if options.simple?
-        fs.writeFileSync(newFilename, outputSimple(out), "UTF-8")
-      else
-        fs.writeFileSync(newFilename, outputImage(out))
-  tend = Date.now()
-  unless options.quiet? then console.log "Finished in #{tend - tstart} msec."
-  exit(if success then 0 else 1)
+      fs.writeFileSync(newFilename, outputImage(out))
+tend = Date.now()
+unless options.quiet? then console.log "Finished in #{tend - tstart} msec."
+exit(if success then 0 else 1)
